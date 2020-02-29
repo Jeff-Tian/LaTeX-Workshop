@@ -6,9 +6,9 @@ import * as chokidar from 'chokidar'
 import * as micromatch from 'micromatch'
 import * as utils from '../utils/utils'
 
-import {Extension} from '../main'
-import {Suggestion as CiteEntry} from '../providers/completer/citation'
-import {Suggestion as CmdEntry} from '../providers/completer/command'
+import { Extension } from '../main'
+import { Suggestion as CiteEntry } from '../providers/completer/citation'
+import { Suggestion as CmdEntry } from '../providers/completer/command'
 
 interface Content {
     [filepath: string]: { // tex file name
@@ -51,7 +51,7 @@ export class Manager {
             usePolling,
             interval,
             binaryInterval: Math.max(interval, 1000),
-            awaitWriteFinish: {stabilityThreshold: delay}
+            awaitWriteFinish: { stabilityThreshold: delay }
         }
         this.initiatePdfWatcher()
     }
@@ -74,9 +74,9 @@ export class Manager {
         const docker = configuration.get('docker.enabled')
         const outDir = configuration.get('latex.outDir') as string
         const out = outDir.replace(/%DOC%/g, docker ? docfile : doc)
-                  .replace(/%DOCFILE%/g, docfile)
-                  .replace(/%DIR%/g, docker ? './' : path.dirname(texPath))
-                  .replace(/%TMPDIR%/g, this.extension.builder.tmpDir)
+            .replace(/%DOCFILE%/g, docfile)
+            .replace(/%DIR%/g, docker ? './' : path.dirname(texPath))
+            .replace(/%TMPDIR%/g, this.extension.builder.tmpDir)
         return path.normalize(out.split(path.sep).join('/'))
 
     }
@@ -150,9 +150,12 @@ export class Manager {
      * retrieved by the public rootFile variable/getter.
      */
     async findRoot(): Promise<string | undefined> {
+        this.extension.logger.addLogMessage('Started finding workspace...')
         this.findWorkspace()
+        this.extension.logger.addLogMessage('Started finding root...')
         this.localRootFile = undefined
         const findMethods = [
+            () => this.findRootFromLayout(),
             () => this.findRootFromMagic(),
             () => this.findRootFromActive(),
             () => this.findRootFromCurrentRoot(),
@@ -187,6 +190,26 @@ export class Manager {
             return this.rootFile
         }
         return undefined
+    }
+
+    private findRootFromLayout(): string | undefined {
+        if (!vscode.window.activeTextEditor) {
+            return undefined
+        }
+        const regex = /^(?:%\s*!layout$)/m
+        const content = vscode.window.activeTextEditor.document.getText()
+
+        const result = content.match(regex)
+
+        if (!result) {
+            return undefined
+        }
+
+        const file = path.resolve(path.dirname(vscode.window.activeTextEditor.document.fileName), result[1])
+
+        this.extension.logger.addLogMessage(`Found root file by layout comment: ${file}`)
+
+        return file
     }
 
     private findRootFromMagic(): string | undefined {
@@ -232,11 +255,11 @@ export class Manager {
         const content = utils.stripComments(vscode.window.activeTextEditor.document.getText(), '%')
         const result = content.match(regex)
         if (result) {
-            const rootSubFile = this.findSubFiles(content)
+            const rootSubFiles = this.findSubFiles(content)
             const file = vscode.window.activeTextEditor.document.fileName
-            if (rootSubFile) {
-               this.localRootFile = file
-               return rootSubFile
+            if (rootSubFiles) {
+                this.localRootFile = file
+                return rootSubFiles
             } else {
                 this.extension.logger.addLogMessage(`Found root file from active editor: ${file}`)
                 return file
@@ -296,7 +319,7 @@ export class Manager {
                 this.extension.logger.addLogMessage(`Found files that might be root, choose the first one: ${candidates}`)
                 return candidates[0]
             }
-        } catch (e) {}
+        } catch (e) { }
         return undefined
     }
 
@@ -335,7 +358,7 @@ export class Manager {
             return this.cachedContent[cachedFile].content
         }
         const fileContent = utils.stripComments(fs.readFileSync(file).toString(), '%')
-        this.cachedContent[file] = {content: fileContent, element: {}, children: [], bibs: []}
+        this.cachedContent[file] = { content: fileContent, element: {}, children: [], bibs: [] }
         return fileContent
     }
 
@@ -406,7 +429,7 @@ export class Manager {
         let content = this.cachedContent[file].content
         // Do it reverse, so that we can directly insert the new content without
         // messing up the previous line numbers.
-        for (let index = this.cachedContent[file].children.length - 1; index >=0; index--) {
+        for (let index = this.cachedContent[file].children.length - 1; index >= 0; index--) {
             const child = this.cachedContent[file].children[index]
             if (subFileTrace.includes(child.file)) {
                 continue
@@ -428,7 +451,7 @@ export class Manager {
 
         // Update children of current file
         if (this.cachedContent[file] === undefined) {
-            this.cachedContent[file] = {content, element: {}, bibs: [], children: []}
+            this.cachedContent[file] = { content, element: {}, bibs: [], children: [] }
             const inputReg = /(?:\\(?:input|InputIfFileExists|include|subfile|(?:(?:sub)?(?:import|inputfrom|includefrom)\*?{([^}]*)}))(?:\[[^[\]{}]*\])?){([^}]*)}/g
             while (true) {
                 const result = inputReg.exec(content)
@@ -567,9 +590,9 @@ export class Manager {
         })
 
         ioFiles.output.forEach((outputFile: string) => {
-            if (path.extname(outputFile) === '.aux' ) {
+            if (path.extname(outputFile) === '.aux') {
                 this.parseAuxFile(fs.readFileSync(outputFile).toString(),
-                                  path.dirname(outputFile).replace(outDir, rootDir))
+                    path.dirname(outputFile).replace(outDir, rootDir))
             }
         })
     }
@@ -597,7 +620,7 @@ export class Manager {
         }
     }
 
-    private parseFlsContent(content: string, flsFile: string): {input: string[], output: string[]} {
+    private parseFlsContent(content: string, flsFile: string): { input: string[], output: string[] } {
         const inputFiles: Set<string> = new Set()
         const outputFiles: Set<string> = new Set()
         const pwd = path.dirname(flsFile)
@@ -623,7 +646,7 @@ export class Manager {
             }
         }
 
-        return {input: Array.from(inputFiles), output: Array.from(outputFiles)}
+        return { input: Array.from(inputFiles), output: Array.from(outputFiles) }
     }
 
     private initiateFileWatcher() {
