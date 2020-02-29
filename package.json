@@ -689,7 +689,8 @@
                 "-synctex=1",
                 "-interaction=nonstopmode",
                 "-file-line-error",
-                "-pdf",
+                "-xelatex",
+                "-shell-escape",
                 "-outdir=%OUTDIR%",
                 "%DOC%"
               ],

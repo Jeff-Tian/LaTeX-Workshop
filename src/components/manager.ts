@@ -205,11 +205,19 @@ export class Manager {
             return undefined
         }
 
-        const file = path.resolve(path.dirname(vscode.window.activeTextEditor.document.fileName), result[1])
+        const file = path.resolve(vscode.window.activeTextEditor.document.fileName)
 
-        this.extension.logger.addLogMessage(`Found root file by layout comment: ${file}`)
+        if (!this.workspaceRootDir) {
+            this.findWorkspace()
+        }
 
-        return file
+        const layout = path.resolve(this.workspaceRootDir, 'layout.tex')
+        const layoutWrapped = path.resolve(path.dirname(file), 'layout-wrapped.tex')
+        fs.writeFileSync(layoutWrapped, fs.readFileSync(layout, 'utf-8').replace('{children}', fs.readFileSync(file, 'utf-8')))
+
+        this.extension.logger.addLogMessage(`Found root file by layout comment: ${layoutWrapped}`)
+
+        return layoutWrapped
     }
 
     private findRootFromMagic(): string | undefined {

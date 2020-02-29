@@ -4,9 +4,9 @@ import * as fs from 'fs-extra'
 import * as cp from 'child_process'
 import * as tmp from 'tmp'
 import * as pdfjsLib from 'pdfjs-dist'
-import {Mutex} from '../lib/await-semaphore'
+import { Mutex } from '../lib/await-semaphore'
 
-import {Extension} from '../main'
+import { Extension } from '../main'
 
 const maxPrintLine = '10000'
 const texMagicProgramName = 'TeXMagicProgram'
@@ -21,12 +21,12 @@ export class Builder {
     buildMutex: Mutex
     waitingForBuildToFinishMutex: Mutex
     isMiktex: boolean = false
-    previouslyUsedRecipe: {name: string, tools: (string | StepCommand)[]} | undefined
+    previouslyUsedRecipe: { name: string, tools: (string | StepCommand)[] } | undefined
 
     constructor(extension: Extension) {
         this.extension = extension
         try {
-            this.tmpDir = tmp.dirSync({unsafeCleanup: true}).name.split(path.sep).join('/')
+            this.tmpDir = tmp.dirSync({ unsafeCleanup: true }).name.split(path.sep).join('/')
         } catch (e) {
             vscode.window.showErrorMessage('Error during making tmpdir to build TeX files. Please check the environment variables, TEMP, TMP, and TMPDIR on your system.')
             throw e
@@ -79,7 +79,7 @@ export class Builder {
         }
         const releaseBuildMutex = await this.preprocess()
         this.extension.logger.displayStatus('sync~spin', 'statusBar.foreground')
-        this.extension.logger.addLogMessage(`Build using the external command: ${command} ${args.length > 0 ? args.join(' '): ''}`)
+        this.extension.logger.addLogMessage(`Build using the external command: ${command} ${args.length > 0 ? args.join(' ') : ''}`)
         let wd = pwd
         const ws = vscode.workspace.workspaceFolders
         if (ws && ws.length > 0) {
@@ -89,7 +89,7 @@ export class Builder {
         if (rootFile !== undefined) {
             args = args.map(this.replaceArgumentPlaceholders(rootFile, this.tmpDir))
         }
-        this.currentProcess = cp.spawn(command, args, {cwd: wd})
+        this.currentProcess = cp.spawn(command, args, { cwd: wd })
         const pid = this.currentProcess.pid
         this.extension.logger.addLogMessage(`External build process spawned. PID: ${pid}.`)
 
@@ -187,7 +187,7 @@ export class Builder {
             try {
                 const doc = await pdfjsLib.getDocument(this.extension.manager.tex2pdf(rootFile, true)).promise
                 this.extension.buildInfo.setPageTotal(doc.numPages)
-            } catch(e) {
+            } catch (e) {
 
             }
             // Create sub directories of output directory
@@ -209,7 +209,7 @@ export class Builder {
         } catch (e) {
             this.extension.buildInfo.buildEnded()
             releaseBuildMutex()
-            throw(e)
+            throw (e)
         }
     }
 
@@ -248,7 +248,8 @@ export class Builder {
             if (args) {
                 command += ' ' + args[0]
             }
-            this.currentProcess = cp.spawn(command, [], {cwd: path.dirname(rootFile), env: envVars, shell: true})
+            this.extension.logger.addLogMessage(`Spawning ${command} ...`)
+            this.currentProcess = cp.spawn(command, [], { cwd: path.dirname(rootFile), env: envVars, shell: true })
         } else {
             let workingDirectory: string
             if (steps[index].command === 'latexmk' && rootFile === this.extension.manager.localRootFile && this.extension.manager.rootDir) {
@@ -256,7 +257,7 @@ export class Builder {
             } else {
                 workingDirectory = path.dirname(rootFile)
             }
-            this.currentProcess = cp.spawn(steps[index].command, steps[index].args, {cwd: workingDirectory, env: envVars})
+            this.currentProcess = cp.spawn(steps[index].command, steps[index].args, { cwd: workingDirectory, env: envVars })
         }
         const pid = this.currentProcess.pid
         this.extension.logger.addLogMessage(`LaTeX build process spawned. PID: ${pid}.`)
@@ -267,7 +268,7 @@ export class Builder {
             this.extension.logger.addCompilerMessage(newStdout.toString())
             try {
                 this.extension.buildInfo.newStdoutLine(newStdout.toString())
-            } catch(e) {
+            } catch (e) {
 
             }
         })
@@ -373,12 +374,12 @@ export class Builder {
 
         const [magicTex, magicBib] = this.findProgramMagic(rootFile)
         if (recipeName === undefined && magicTex && !configuration.get('latex.build.forceRecipeUsage')) {
-            if (! magicTex.args) {
+            if (!magicTex.args) {
                 magicTex.args = configuration.get('latex.magic.args') as string[]
                 magicTex.name = texMagicProgramName + 'WithArgs'
             }
             if (magicBib) {
-                if (! magicBib.args) {
+                if (!magicBib.args) {
                     magicBib.args = configuration.get('latex.magic.bib.args') as string[]
                     magicBib.name = bibMagicProgramName + 'WithArgs'
                 }
@@ -387,7 +388,7 @@ export class Builder {
                 steps = [magicTex]
             }
         } else {
-            const recipes = configuration.get('latex.recipes') as {name: string, tools: (string | StepCommand)[]}[]
+            const recipes = configuration.get('latex.recipes') as { name: string, tools: (string | StepCommand)[] }[]
             const tools = configuration.get('latex.tools') as StepCommand[]
             if (recipes.length < 1) {
                 this.extension.logger.showErrorMessage('No recipes defined.')
@@ -441,7 +442,7 @@ export class Builder {
                 step.args = step.args.map(this.replaceArgumentPlaceholders(rootFile, this.tmpDir))
             }
             if (step.env) {
-                Object.keys(step.env).forEach( v => {
+                Object.keys(step.env).forEach(v => {
                     const e = step.env && step.env[v]
                     if (step.env && e) {
                         step.env[v] = this.replaceArgumentPlaceholders(rootFile, this.tmpDir)(e)
@@ -510,10 +511,10 @@ export class Builder {
             const outDir = this.extension.manager.getOutDir(rootFile)
 
             return arg.replace(/%DOC%/g, docker ? docfile : doc)
-                      .replace(/%DOCFILE%/g, docfile)
-                      .replace(/%DIR%/g, path.dirname(rootFile).split(path.sep).join('/'))
-                      .replace(/%TMPDIR%/g, tmpDir)
-                      .replace(/%OUTDIR%/g, outDir)
+                .replace(/%DOCFILE%/g, docfile)
+                .replace(/%DIR%/g, path.dirname(rootFile).split(path.sep).join('/'))
+                .replace(/%TMPDIR%/g, tmpDir)
+                .replace(/%OUTDIR%/g, outDir)
         }
     }
 }
