@@ -1,15 +1,15 @@
 {
-  "name": "latex-workshop",
-  "displayName": "LaTeX Workshop",
-  "description": "Boost LaTeX typesetting efficiency with preview, compile, autocomplete, colorize, and more.",
+  "name": "tex-workshop",
+  "displayName": "TeX Workshop",
+  "description": "Boost TeX typesetting efficiency with preview, compile, autocomplete, colorize, and more.",
   "icon": "icons/icon.png",
   "version": "8.7.2",
-  "publisher": "James-Yu",
+  "publisher": "Jeff-Tian",
   "license": "MIT",
-  "homepage": "https://github.com/James-Yu/LaTeX-Workshop",
+  "homepage": "https://github.com/Jeff-Tian/LaTeX-Workshop",
   "repository": {
     "type": "git",
-    "url": "https://github.com/James-Yu/LaTeX-Workshop.git"
+    "url": "https://github.com/Jeff-Tian/LaTeX-Workshop.git"
   },
   "engines": {
     "vscode": "^1.34.0"
