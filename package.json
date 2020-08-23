@@ -3,7 +3,7 @@
   "displayName": "TeX Workshop",
   "description": "Boost TeX typesetting efficiency with preview, compile, autocomplete, colorize, and more.",
   "icon": "icons/icon.png",
-  "version": "8.7.2",
+  "version": "8.7.3",
   "publisher": "Jeff-Tian",
   "license": "MIT",
   "homepage": "https://github.com/Jeff-Tian/LaTeX-Workshop",
