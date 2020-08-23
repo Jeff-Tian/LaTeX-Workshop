@@ -1,7 +1,13 @@
+// We have to remove `process.versions.electron` to work around a bug of PDF.js.
+// With `process.versions.electron`, PDF.js misinterprets the context of the runtime as
+// the renderer of the browser.
+delete (process.versions as any).electron
+
 import * as domstubs from '@tamuratak/domstubs'
 import * as fs from 'fs'
 import * as path from 'path'
-import * as pdfjsLib from 'pdfjs-dist'
+// eslint-disable-next-line
+const pdfjsLib = require('pdfjs-dist/es5/build/pdf.js')
 import * as workerpool from 'workerpool'
 
 domstubs.setStubs(global)

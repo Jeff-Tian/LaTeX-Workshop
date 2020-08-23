@@ -43,7 +43,7 @@ A clear and concise description of what you expected to happen.
 
 ## Logs [Required]
 
-Please paste the whole log messages here, not parts of ones. It is very important to identify problems.
+Please paste the whole log messages here, not parts of ones. The log should start with `Initializing LaTeX Workshop`. It is very important to identify problems.
 
 ### LaTeX Workshop Output [Required]
 
@@ -56,7 +56,7 @@ To access the log, click the 'TeX' icon on the Activity Bar on the left side, se
 ### Developer Tools Console [Required]
 
 ```
-To access the log, click 'help' -> 'Toggle Developer Tools. Paste anything suspicious.
+To access the log, click 'help' -> 'Toggle Developer Tools' -> 'Console'. Paste anything suspicious.
 
 [Paste the log here]
 ```
@@ -80,6 +80,10 @@ If applicable, add screenshots to help explain your problem.
 
 
 ## Additional questions
+
+### Are you using VSCodium?
+
+Yes/No
 
 ### Are you using LaTeX Workshop with VS Code Remote?
 

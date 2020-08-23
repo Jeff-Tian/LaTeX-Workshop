@@ -27,6 +27,10 @@ export function callCbOnDidOpenWebSocket(sock: WebSocket, cb: () => any): void {
     }
 }
 
+export function isEmbedded(): boolean {
+    return window.parent !== window
+}
+
 export function isPdfjsShortcut(e: Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'code' | 'key'>) {
     // exclusive or
     const ctrlKey = (e.ctrlKey && !e.metaKey) || (!e.ctrlKey && e.metaKey)
@@ -41,7 +45,10 @@ export function isPdfjsShortcut(e: Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'm
     }
     // Ctrl
     if (ctrlKey && !e.altKey && !e.shiftKey) {
-        if (/^[-+=0fp]$/.exec(e.key)) {
+        if (/^[-+=0f]$/.exec(e.key)) {
+            return true
+        }
+        if ( 'p' === e.key && !isEmbedded() ) {
             return true
         }
         return false
@@ -71,4 +78,18 @@ export function isPdfjsShortcut(e: Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'm
         return false
     }
     return false
+}
+
+export function elementWidth(element: HTMLElement, forceDisplay = true): number {
+    const originalDisplay = element.style.display
+    if (forceDisplay) {
+        element.style.display = 'block'
+    }
+    const style = window.getComputedStyle(element)
+    const width = element.offsetWidth
+    const margin = parseFloat(style.marginLeft) + parseFloat(style.marginRight)
+    if (forceDisplay) {
+        element.style.display = originalDisplay
+    }
+    return width + margin
 }

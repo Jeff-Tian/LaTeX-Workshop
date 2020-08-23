@@ -8,10 +8,12 @@ import * as utils from '../utils/utils'
 
 export class SectionNodeProvider implements vscode.TreeDataProvider<Section> {
 
-    private _onDidChangeTreeData: vscode.EventEmitter<Section | undefined> = new vscode.EventEmitter<Section | undefined>()
+    private readonly _onDidChangeTreeData: vscode.EventEmitter<Section | undefined> = new vscode.EventEmitter<Section | undefined>()
     readonly onDidChangeTreeData: vscode.Event<Section | undefined>
-    private hierarchy: string[]
-    private sectionDepths: { [key: string]: number } = {}
+    private readonly hierarchy: string[]
+    private readonly sectionDepths: { [key: string]: number } = {}
+    private showLabels: boolean
+    private showNumbers: boolean
     public root: string = ''
 
     // our data source is a set multi-rooted set of trees
@@ -26,6 +28,8 @@ export class SectionNodeProvider implements vscode.TreeDataProvider<Section> {
                 this.sectionDepths[sec] = index
             })
         })
+        this.showLabels = configuration.get('view.outline.labels.enabled') as boolean
+        this.showNumbers = configuration.get('view.outline.numbers.enabled') as boolean
     }
 
     refresh(): Section[] {
@@ -41,7 +45,7 @@ export class SectionNodeProvider implements vscode.TreeDataProvider<Section> {
         this._onDidChangeTreeData.fire()
     }
 
-    buildModel(filePath: string, fileStack?: string[], parentStack?: Section[], parentChildren?: Section[], imports: boolean = true): Section[] {
+    buildModel(filePath: string, fileStack?: string[], parentStack?: Section[], parentChildren?: Section[], sectionNumber?: number[], imports: boolean = true): Section[] {
 
         let rootStack: Section[] = []
         if (parentStack) {
@@ -59,6 +63,10 @@ export class SectionNodeProvider implements vscode.TreeDataProvider<Section> {
         }
         newFileStack.push(filePath)
 
+        if (! sectionNumber) {
+            sectionNumber = Array(this.hierarchy.length).fill(0)
+        }
+
         let prevSection: Section | undefined = undefined
 
         const envStack: {name: string, start: number, end: number}[] = []
@@ -71,7 +79,7 @@ export class SectionNodeProvider implements vscode.TreeDataProvider<Section> {
         }
 
         let content = fs.readFileSync(filePath, 'utf-8')
-        content = content.replace(/([^\\]|^)%.*$/gm, '$1') // Strip comments
+        content = utils.stripCommentsAndVerbatim(content)
         const endPos = content.search(/\\end{document}/gm)
         if (endPos > -1) {
             content = content.substr(0, endPos)
@@ -89,11 +97,13 @@ export class SectionNodeProvider implements vscode.TreeDataProvider<Section> {
         // const inputReg = /^((?:\\(?:input|include|subfile)(?:\[[^\[\]\{\}]*\])?){([^}]*)})|^((?:\\((sub)?section)(?:\[[^\[\]\{\}]*\])?){([^}]*)})/gm
         const inputReg = RegExp(pattern, 'm')
         const envReg = /(?:\\(begin|end)(?:\[[^[\]]*\])?){(?:(figure|frame|table)\*?)}/m
+        const labelReg = /\\label{([^}]*)}/m
 
         const lines = content.split('\n')
         for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
             const line = lines[lineNumber]
             envReg.lastIndex = 0
+            labelReg.lastIndex = 0
             inputReg.lastIndex = 0
             let result = envReg.exec(line)
             if (result && result[1] === 'begin') {
@@ -110,7 +120,8 @@ export class SectionNodeProvider implements vscode.TreeDataProvider<Section> {
                     continue
                 }
                 const depth = noRoot() ? 0 : currentRoot().depth + 1
-                const newEnv = new Section(`${env.name.charAt(0).toUpperCase() + env.name.slice(1)}: ${caption}`, vscode.TreeItemCollapsibleState.Expanded, depth, env.start, env.end, filePath)
+                sectionNumber = this.increment(sectionNumber, depth)
+                const newEnv = new Section(this. formatSectionNumber(sectionNumber) + `${env.name.charAt(0).toUpperCase() + env.name.slice(1)}: ${caption}`, vscode.TreeItemCollapsibleState.Expanded, depth, env.start, env.end, filePath)
                 if (noRoot()) {
                     children.push(newEnv)
                 } else {
@@ -141,7 +152,8 @@ export class SectionNodeProvider implements vscode.TreeDataProvider<Section> {
                 const depth = this.sectionDepths[heading]
                 const title = utils.getLongestBalancedString(result[6])
 
-                const newSection = new Section(title, vscode.TreeItemCollapsibleState.Expanded, depth, lineNumber, lines.length - 1, filePath)
+                sectionNumber = this.increment(sectionNumber, depth)
+                const newSection = new Section(this.formatSectionNumber(sectionNumber) + title, vscode.TreeItemCollapsibleState.Expanded, depth, lineNumber, lines.length - 1, filePath)
                 if (prevSection) {
                     prevSection.toLine = lineNumber - 1
                 }
@@ -202,10 +214,51 @@ export class SectionNodeProvider implements vscode.TreeDataProvider<Section> {
                 if (prevSection) {
                     prevSection.subfiles.push(inputFilePath)
                 }
-                this.buildModel(inputFilePath, newFileStack, rootStack, children)
+                this.buildModel(inputFilePath, newFileStack, rootStack, children, sectionNumber)
+            }
+
+            // Labels part
+            if (this.showLabels) {
+                result = labelReg.exec(line)
+                if (result) {
+                    const depth = noRoot() ? 0 : currentRoot().depth + 1
+                    const newLabel = new Section(`#Label: ${result[1]}`, vscode.TreeItemCollapsibleState.None, depth, lineNumber, lineNumber, filePath)
+                    if (noRoot()) {
+                        children.push(newLabel)
+                    } else {
+                        currentRoot().children.push(newLabel)
+                    }
+                }
             }
         }
         return children
+    }
+
+    private increment(sectionNumber: number[], depth: number): number[] {
+        sectionNumber[depth] += 1
+        sectionNumber.forEach((_, index) => {
+            if (index > depth) {
+                sectionNumber[index] = 0
+            }
+        })
+        return sectionNumber
+    }
+
+    private formatSectionNumber(sectionNumber: number[]) {
+        if (! this.showNumbers) {
+            return ''
+        }
+        let str: string = ''
+        sectionNumber.forEach((value) => {
+            if (str === '' && value === 0) {
+                return
+            }
+            if (str !== '') {
+                str += '.'
+            }
+            str += value.toString()
+        })
+        return str.replace(/(\.0)*$/, '') + ' '
     }
 
     getTreeItem(element: Section): vscode.TreeItem {

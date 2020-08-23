@@ -45,9 +45,9 @@ async function quickPickRootFile(rootFile: string, localRootFile: string): Promi
 
 
 export class Commander {
-    extension: Extension
-    private _texdoc: TeXDoc
-    snippets: {[key: string]: vscode.SnippetString} = {}
+    private readonly extension: Extension
+    private readonly _texdoc: TeXDoc
+    private readonly snippets: {[key: string]: vscode.SnippetString} = {}
 
     constructor(extension: Extension) {
         this.extension = extension
@@ -65,7 +65,7 @@ export class Commander {
             .catch(err => this.extension.logger.addLogMessage(`Error reading data: ${err}.`))
     }
 
-    async build(skipSelection: boolean = false, rootFile: string | undefined = undefined, recipe: string | undefined = undefined) {
+    async build(skipSelection: boolean = false, rootFile: string | undefined = undefined, languageId: string | undefined = undefined, recipe: string | undefined = undefined) {
         this.extension.logger.addLogMessage('BUILD command invoked.')
         if (!vscode.window.activeTextEditor) {
             return
@@ -76,13 +76,14 @@ export class Commander {
         const externalBuildArgs = configuration.get('latex.external.build.args') as string[]
         if (rootFile === undefined && this.extension.manager.hasTexId(vscode.window.activeTextEditor.document.languageId)) {
             rootFile = await this.extension.manager.findRoot()
+            languageId = this.extension.manager.rootFileLanguageId
         }
         if (externalBuildCommand) {
             const pwd = path.dirname(rootFile ? rootFile : vscode.window.activeTextEditor.document.fileName)
             await this.extension.builder.buildWithExternalCommand(externalBuildCommand, externalBuildArgs, pwd, rootFile)
             return
         }
-        if (rootFile === undefined) {
+        if (rootFile === undefined || languageId === undefined) {
             this.extension.logger.addLogMessage('Cannot find LaTeX root file.')
             return
         }
@@ -95,7 +96,7 @@ export class Commander {
             }
         }
         this.extension.logger.addLogMessage(`Building root file: ${pickedRootFile}`)
-        await this.extension.builder.build(pickedRootFile, recipe)
+        await this.extension.builder.build(pickedRootFile, languageId, recipe)
     }
 
     async revealOutputDir() {
@@ -120,7 +121,7 @@ export class Commander {
             return
         }
         if (recipe) {
-            this.build(false, undefined, recipe)
+            this.build(false, undefined, undefined, recipe)
             return
         }
         vscode.window.showQuickPick(recipes.map(candidate => candidate.name), {
@@ -129,7 +130,7 @@ export class Commander {
             if (!selected) {
                 return
             }
-            this.build(false, undefined, selected)
+            this.build(false, undefined, undefined, selected)
         })
     }
 
@@ -214,23 +215,32 @@ export class Commander {
     }
 
     synctex() {
-        this.extension.logger.addLogMessage('SYNCTEX command invoked.')
-        if (!vscode.window.activeTextEditor || !this.extension.manager.hasTexId(vscode.window.activeTextEditor.document.languageId)) {
-            return
+        try {
+            this.extension.logger.addLogMessage('SYNCTEX command invoked.')
+            if (!vscode.window.activeTextEditor || !this.extension.manager.hasTexId(vscode.window.activeTextEditor.document.languageId)) {
+                this.extension.logger.addLogMessage('SyncTeX fails. The document of the active TextEditor is not a TeX document.')
+                return
+            }
+            const configuration = vscode.workspace.getConfiguration('latex-workshop')
+            let pdfFile: string | undefined = undefined
+            if (this.extension.manager.localRootFile && configuration.get('latex.rootFile.useSubFile')) {
+                pdfFile = this.extension.manager.tex2pdf(this.extension.manager.localRootFile)
+            } else if (this.extension.manager.rootFile !== undefined) {
+                pdfFile = this.extension.manager.tex2pdf(this.extension.manager.rootFile)
+            }
+            this.extension.locator.syncTeX(undefined, undefined, pdfFile)
+        } catch(e) {
+            if (e instanceof Error) {
+                this.extension.logger.logError(e)
+            }
+            throw e
         }
-        const configuration = vscode.workspace.getConfiguration('latex-workshop')
-        let pdfFile: string | undefined = undefined
-        if (this.extension.manager.localRootFile && configuration.get('latex.rootFile.useSubFile')) {
-            pdfFile = this.extension.manager.tex2pdf(this.extension.manager.localRootFile)
-        } else if (this.extension.manager.rootFile !== undefined) {
-            pdfFile = this.extension.manager.tex2pdf(this.extension.manager.rootFile)
-        }
-        this.extension.locator.syncTeX(undefined, undefined, pdfFile)
     }
 
     synctexonref(line: number, filePath: string) {
         this.extension.logger.addLogMessage('SYNCTEX command invoked.')
         if (!vscode.window.activeTextEditor || !this.extension.manager.hasTexId(vscode.window.activeTextEditor.document.languageId)) {
+            this.extension.logger.addLogMessage('SyncTeX fails. The document of the active TextEditor is not a TeX document.')
             return
         }
         this.extension.locator.syncTeXOnRef({line, filePath})
@@ -265,6 +275,20 @@ export class Commander {
     citation() {
         this.extension.logger.addLogMessage('CITATION command invoked.')
         this.extension.completer.citation.browser()
+    }
+
+    wordcount() {
+        this.extension.logger.addLogMessage('WORDCOUNT command invoked.')
+        if (!vscode.window.activeTextEditor || !this.extension.manager.hasTexId(vscode.window.activeTextEditor.document.languageId) ||
+            this.extension.manager.rootFile === vscode.window.activeTextEditor.document.fileName) {
+            if (this.extension.manager.rootFile) {
+                this.extension.counter.count(this.extension.manager.rootFile)
+            } else {
+                this.extension.logger.addLogMessage('WORDCOUNT: No rootFile defined.')
+            }
+        } else {
+            this.extension.counter.count(vscode.window.activeTextEditor.document.fileName, false)
+        }
     }
 
     log(compiler?: string) {
@@ -322,12 +346,20 @@ export class Commander {
         this.extension.envPair.gotoPair()
     }
 
+    selectEnvContent() {
+        this.extension.logger.addLogMessage('SelectEnv command invoked.')
+        if (!vscode.window.activeTextEditor || !this.extension.manager.hasTexId(vscode.window.activeTextEditor.document.languageId)) {
+            return
+        }
+        this.extension.envPair.selectEnv()
+    }
+
     selectEnvName() {
         this.extension.logger.addLogMessage('SelectEnvName command invoked.')
         if (!vscode.window.activeTextEditor || !this.extension.manager.hasTexId(vscode.window.activeTextEditor.document.languageId)) {
             return
         }
-        this.extension.envPair.envAction('selection')
+        this.extension.envPair.envNameAction('selection')
     }
 
     multiCursorEnvName() {
@@ -335,7 +367,7 @@ export class Commander {
         if (!vscode.window.activeTextEditor || !this.extension.manager.hasTexId(vscode.window.activeTextEditor.document.languageId)) {
             return
         }
-        this.extension.envPair.envAction('cursor')
+        this.extension.envPair.envNameAction('cursor')
     }
 
     toggleEquationEnv() {
@@ -343,7 +375,7 @@ export class Commander {
         if (!vscode.window.activeTextEditor || !this.extension.manager.hasTexId(vscode.window.activeTextEditor.document.languageId)) {
             return
         }
-        this.extension.envPair.envAction('equationToggle')
+        this.extension.envPair.envNameAction('equationToggle')
     }
 
     closeEnv() {
@@ -553,105 +585,11 @@ export class Commander {
      * @param change
      */
     shiftSectioningLevel(change: 'promote' | 'demote') {
-        if (change !== 'promote' && change !== 'demote') {
-            throw TypeError(
-            `Invalid value of function parameter 'change' (=${change})`
-            )
-        }
+       this.extension.section.shiftSectioningLevel(change)
+    }
 
-        const editor = vscode.window.activeTextEditor
-        if (editor === undefined) {
-            return
-        }
-
-        const promotes = {
-            part: 'part',
-            chapter: 'part',
-            section: 'chapter',
-            subsection: 'section',
-            subsubsection: 'subsection',
-            paragraph: 'subsubsection',
-            subparagraph: 'paragraph'
-        }
-        const demotes = {
-            part: 'chapter',
-            chapter: 'section',
-            section: 'subsection',
-            subsection: 'subsubsection',
-            subsubsection: 'paragraph',
-            paragraph: 'subparagraph',
-            subparagraph: 'subparagraph'
-        }
-
-        function replacer(
-            _match: string,
-            sectionName: keyof typeof promotes,
-            asterisk: string | undefined,
-            options: string | undefined,
-            contents: string
-        ) {
-            if (change === 'promote') {
-                return '\\' + promotes[sectionName] + (asterisk ?? '') + (options ?? '') + contents
-            } else {
-                // if (change === 'demote')
-                return '\\' + demotes[sectionName] + (asterisk ?? '') + (options ?? '') + contents
-            }
-        }
-
-        // when supported, negative lookbehind at start would be nice --- (?<!\\)
-        const pattern = /\\(part|chapter|section|subsection|subsection|subsubsection|paragraph|subparagraph)(\*)?(\[.+?\])?(\{.*?\})/g
-
-        function getLastLineLength(someText: string) {
-            const lines = someText.split(/\n/)
-            return lines.slice(lines.length - 1, lines.length)[0].length
-        }
-
-        const document = editor.document
-        const selections = editor.selections
-        const newSelections: vscode.Selection[] = []
-
-        const edit = new vscode.WorkspaceEdit()
-
-        for (let selection of selections) {
-            let mode: 'selection' | 'cursor' = 'selection'
-            let oldSelection: vscode.Selection | null = null
-            if (selection.isEmpty) {
-                mode = 'cursor'
-                oldSelection = selection
-                const line = document.lineAt(selection.anchor)
-                selection = new vscode.Selection(line.range.start, line.range.end)
-            }
-
-            const selectionText = document.getText(selection)
-            const newText = selectionText.replace(pattern, replacer)
-            edit.replace(document.uri, selection, newText)
-
-            const changeInEndCharacterPosition = getLastLineLength(newText) - getLastLineLength(selectionText)
-            if (mode === 'selection') {
-                newSelections.push(
-                    new vscode.Selection(selection.start,
-                        new vscode.Position(selection.end.line,
-                            selection.end.character + changeInEndCharacterPosition
-                        )
-                    )
-                )
-            } else if (oldSelection) { // mode === 'cursor'
-                const anchorPosition = oldSelection.anchor.character + changeInEndCharacterPosition
-                const activePosition = oldSelection.active.character + changeInEndCharacterPosition
-                newSelections.push(
-                    new vscode.Selection(
-                        new vscode.Position(oldSelection.anchor.line, anchorPosition < 0 ? 0 : anchorPosition),
-                        new vscode.Position(oldSelection.active.line, activePosition < 0 ? 0 : activePosition)
-                    )
-                )
-            }
-        }
-
-        vscode.workspace.applyEdit(edit).then(success => {
-            if (success) {
-                editor.selections = newSelections
-            }
-        })
+    selectSection() {
+        this.extension.section.selectSection()
     }
 
     devParseLog() {

@@ -8,18 +8,18 @@ import { GraphicsScaler } from './graphicsscaler'
 
 
 export class GraphicsPreview {
-    private cacheDir: string
-    private pdfFileCacheMap: Map<string, {cacheFileName: string, inode: number}>
+    private readonly cacheDir: string
+    private readonly pdfFileCacheMap: Map<string, {cacheFileName: string, inode: number}>
     private curCacheName = 0
 
-    extension: Extension
-    pdfRenderer: PDFRenderer
-    graphicsScaler: GraphicsScaler
+    private readonly extension: Extension
+    private readonly pdfRenderer: PDFRenderer
+    private readonly graphicsScaler: GraphicsScaler
 
     constructor(e: Extension) {
         this.extension = e
-        this.pdfRenderer = new PDFRenderer(e)
-        this.graphicsScaler = new GraphicsScaler(e)
+        this.pdfRenderer = new PDFRenderer()
+        this.graphicsScaler = new GraphicsScaler()
         const tmpdir = tmpFile.dirSync({ unsafeCleanup: true })
         this.cacheDir = tmpdir.name
         this.pdfFileCacheMap = new Map<string, {cacheFileName: string, inode: number}>()
@@ -64,21 +64,23 @@ export class GraphicsPreview {
     }
 
     async renderGraphics(filePath: string, opts: { height: number, width: number, pageNumber?: number }): Promise<string | vscode.Uri | undefined> {
+        const pageNumber = opts.pageNumber || 1
         if (!fs.existsSync(filePath)) {
             return undefined
         }
         if (/\.pdf$/i.exec(filePath)) {
-            const cache = this.pdfFileCacheMap.get(filePath)
+            const cacheKey = JSON.stringify([filePath, pageNumber])
+            const cache = this.pdfFileCacheMap.get(cacheKey)
             const cacheFileName = cache?.cacheFileName ?? this.newSvgCacheName()
             const svgPath = path.join(this.cacheDir, cacheFileName)
             const curStat = fs.statSync(filePath)
             if( cache && fs.existsSync(svgPath) && fs.statSync(svgPath).mtimeMs >= curStat.mtimeMs && cache.inode === curStat.ino ) {
                 return vscode.Uri.file(svgPath)
             }
-            this.pdfFileCacheMap.set(filePath, {cacheFileName, inode: curStat.ino})
+            this.pdfFileCacheMap.set(cacheKey, {cacheFileName, inode: curStat.ino})
             const svg0 = await this.pdfRenderer.renderToSVG(
                 filePath,
-                { height: opts.height, width: opts.width, pageNumber: opts.pageNumber || 1 }
+                { height: opts.height, width: opts.width, pageNumber }
             )
             const svg = this.setBackgroundColor(svg0)
             fs.writeFileSync(svgPath, svg)
@@ -91,11 +93,11 @@ export class GraphicsPreview {
         return undefined
     }
 
-    setBackgroundColor(svg: string): string {
+    private setBackgroundColor(svg: string): string {
         return svg.replace(/(<\/svg:style>)/, 'svg { background-color: white };$1')
     }
 
-    findFilePath(relPath: string): string | undefined {
+    private findFilePath(relPath: string): string | undefined {
         if (path.isAbsolute(relPath)) {
             if (fs.existsSync(relPath)) {
                 return relPath

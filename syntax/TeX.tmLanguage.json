@@ -93,7 +93,7 @@
           "name": "punctuation.definition.string.end.tex"
         }
       },
-      "name": "support.class.math.block.tex",
+      "name": "meta.math.block.tex support.class.math.block.tex",
       "patterns": [
         {
           "match": "\\\\\\$",
@@ -117,7 +117,7 @@
           "name": "punctuation.definition.function.tex"
         }
       },
-      "match": "(\\\\)[A-Za-z@]+",
+      "match": "(\\\\)[A-Za-z@,;]+",
       "name": "support.function.general.tex"
     },
     {
@@ -128,10 +128,6 @@
       },
       "match": "(\\\\)[^a-zA-Z@]",
       "name": "constant.character.escape.tex"
-    },
-    {
-      "match": "«press a-z and space for greek letter»[a-zA-Z]*",
-      "name": "meta.placeholder.greek.tex"
     }
   ],
   "repository": {
@@ -234,8 +230,8 @@
           "name": "constant.numeric.math.tex"
         },
         {
-          "match": "«press a-z and space for greek letter»[a-zA-Z]*",
-          "name": "meta.placeholder.greek.math.tex"
+          "match": "[\\+\\*/_\\^-]",
+          "name": "punctuation.math.operator.latex"
         }
       ]
     },

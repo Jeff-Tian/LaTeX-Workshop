@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import {latexParser} from 'latex-utensils'
 import * as path from 'path'
 
-import {MathJaxPool} from './mathjaxpool'
+import {MathJaxPool, TypesetArg} from './mathjaxpool'
 import * as utils from '../../utils/utils'
 import {TextDocumentLike} from '../../components/textdocumentlike'
 import {Extension} from '../../main'
@@ -13,13 +13,13 @@ import {getCurrentThemeLightness} from '../../utils/theme'
 type TexMathEnv = { texString: string, range: vscode.Range, envname: string }
 
 export class MathPreview {
-    extension: Extension
-    color: string = '#000000'
-    mj: MathJaxPool
+    private readonly extension: Extension
+    private color: string = '#000000'
+    private readonly mj: MathJaxPool
 
     constructor(extension: Extension) {
         this.extension = extension
-        this.mj = new MathJaxPool(extension)
+        this.mj = new MathJaxPool()
     }
 
     private postProcessNewCommands(commands: string): string {
@@ -121,7 +121,7 @@ export class MathPreview {
         return commands
     }
 
-    addDummyCodeBlock(md: string): string {
+    private addDummyCodeBlock(md: string): string {
         // We need a dummy code block in hover to make the width of hover larger.
         const dummyCodeBlock = '```\n```'
         return dummyCodeBlock + '\n' + md + '\n' + dummyCodeBlock
@@ -132,15 +132,21 @@ export class MathPreview {
         const scale = configuration.get('hover.preview.scale') as number
         let s = this.renderCursor(document, tex.range)
         s = this.mathjaxify(s, tex.envname)
-        const typesetArg = {
+        const typesetArg: TypesetArg = {
             math: newCommand + this.stripTeX(s),
             format: 'TeX',
             svgNode: true,
         }
         const typesetOpts = { scale, color: this.color }
-        const xml = await this.mj.typeset(typesetArg, typesetOpts)
-        const md = utils.svgToDataUrl(xml)
-        return new vscode.Hover(new vscode.MarkdownString(this.addDummyCodeBlock(`![equation](${md})`)), tex.range )
+        try {
+            const xml = await this.mj.typeset(typesetArg, typesetOpts)
+            const md = utils.svgToDataUrl(xml)
+            return new vscode.Hover(new vscode.MarkdownString(this.addDummyCodeBlock(`![equation](${md})`)), tex.range )
+        } catch(e) {
+            this.extension.logger.logOnRejected(e)
+            this.extension.logger.addLogMessage(`Error when MathJax is rendering ${typesetArg.math}`)
+            throw e
+        }
     }
 
     async provideHoverOnRef(
@@ -184,7 +190,7 @@ export class MathPreview {
         const newTex = this.replaceLabelWithTag(tex.texString, refData.label, tag)
         const s = this.mathjaxify(newTex, tex.envname, {stripLabel: false})
         const obj = { labels : {}, IDs: {}, startNumber: 0 }
-        const typesetArg = {
+        const typesetArg: TypesetArg = {
             width: 50,
             equationNumbers: 'AMS',
             math: newCommand + this.stripTeX(s),
@@ -193,16 +199,22 @@ export class MathPreview {
             state: {AMS: obj}
         }
         const typesetOpts = { scale, color: this.color }
-        const xml = await this.mj.typeset(typesetArg, typesetOpts)
-        const md = utils.svgToDataUrl(xml)
-        const line = refData.position.line
-        const link = vscode.Uri.parse('command:latex-workshop.synctexto').with({ query: JSON.stringify([line, refData.file]) })
-        const mdLink = new vscode.MarkdownString(`[View on pdf](${link})`)
-        mdLink.isTrusted = true
-        return new vscode.Hover( [this.addDummyCodeBlock(`![equation](${md})`), mdLink], tex.range )
+        try {
+            const xml = await this.mj.typeset(typesetArg, typesetOpts)
+            const md = utils.svgToDataUrl(xml)
+            const line = refData.position.line
+            const link = vscode.Uri.parse('command:latex-workshop.synctexto').with({ query: JSON.stringify([line, refData.file]) })
+            const mdLink = new vscode.MarkdownString(`[View on pdf](${link})`)
+            mdLink.isTrusted = true
+            return new vscode.Hover( [this.addDummyCodeBlock(`![equation](${md})`), mdLink], tex.range )
+        } catch(e) {
+            this.extension.logger.logOnRejected(e)
+            this.extension.logger.addLogMessage(`Error when MathJax is rendering ${typesetArg.math}`)
+            throw e
+        }
     }
 
-    refNumberMessage(refData: ReferenceEntry): string | undefined {
+    private refNumberMessage(refData: ReferenceEntry): string | undefined {
         if (refData.prevIndex) {
             const refNum = refData.prevIndex.refNumber
             const refMessage = `numbered ${refNum} at last compilation`
@@ -211,7 +223,7 @@ export class MathPreview {
         return undefined
     }
 
-    replaceLabelWithTag(tex: string, refLabel?: string, tag?: string): string {
+    private replaceLabelWithTag(tex: string, refLabel?: string, tag?: string): string {
         const texWithoutTag = tex.replace(/\\tag\{(\{[^{}]*?\}|.)*?\}/g, '')
         let newTex = texWithoutTag.replace(/\\label\{(.*?)\}/g, (_matchString, matchLabel, _offset, _s) => {
             if (refLabel) {

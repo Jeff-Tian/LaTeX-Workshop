@@ -6,11 +6,12 @@ import * as cp from 'child_process'
 import * as utils from '../../utils/utils'
 
 import {Extension} from '../../main'
+import {IProvider} from './interface'
 
 const ignoreFiles = ['**/.vscode', '**/.vscodeignore', '**/.gitignore']
 
-export class Input {
-    extension: Extension
+export class Input implements IProvider {
+    private readonly extension: Extension
     graphicsPath: string[] = []
 
     constructor(extension: Extension) {
@@ -58,16 +59,21 @@ export class Input {
         this.graphicsPath = []
     }
 
+    provideFrom(type: string, result: RegExpMatchArray, args: {document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext}) {
+        const payload = [type, args.document.fileName, result[1], ...result.slice(2).reverse()]
+        return this.provide(payload)
+    }
+
     /**
      * Provide file name intellissense
      *
      * @param payload an array of string
-     *      payload[0]: the input command type  (input, import, subimport)
+     *      payload[0]: the input command type  (input, import, subimport, includeonly)
      *      payload[1]: the current file name
      *      payload[2]: When defined, the path from which completion is triggered
      *      payload[3]: The already typed path
      */
-    provide(payload: string[]): vscode.CompletionItem[] {
+    private provide(payload: string[]): vscode.CompletionItem[] {
         let provideDirOnly = false
         let baseDir: string[] = []
         const mode = payload[0]
@@ -92,6 +98,7 @@ export class Input {
                     provideDirOnly = true
                 }
                 break
+            case 'includeonly':
             case 'input': {
                 if (this.extension.manager.rootDir === undefined) {
                     this.extension.logger.addLogMessage(`No root dir can be found. The current root file should be undefined, is ${this.extension.manager.rootFile}. How did you get here?`)
@@ -103,15 +110,20 @@ export class Input {
                     baseDir = this.graphicsPath.map(dir => path.join(rootDir, dir))
                 } else {
                     const baseConfig = vscode.workspace.getConfiguration('latex-workshop').get('intellisense.file.base')
+                    const baseDirCurrentFile = path.dirname(currentFile)
                     switch (baseConfig) {
                         case 'root relative':
                             baseDir = [rootDir]
                             break
                         case 'file relative':
-                            baseDir = [path.dirname(currentFile)]
+                            baseDir = [baseDirCurrentFile]
                             break
                         case 'both':
-                            baseDir = [path.dirname(currentFile), rootDir]
+                            if (baseDirCurrentFile !== rootDir) {
+                                baseDir = [baseDirCurrentFile, rootDir]
+                            } else {
+                                baseDir = [rootDir]
+                            }
                             break
                         default:
                     }
@@ -125,7 +137,11 @@ export class Input {
         const suggestions: vscode.CompletionItem[] = []
         baseDir.forEach(dir => {
             if (typedFolder !== '') {
-                dir = path.resolve(dir, typedFolder)
+                let currentFolder = typedFolder
+                if (! typedFolder.endsWith('/')) {
+                    currentFolder = path.dirname(typedFolder)
+                }
+                dir = path.resolve(dir, currentFolder)
             }
             try {
                 let files = fs.readdirSync(dir)

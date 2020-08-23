@@ -1,23 +1,27 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
+import * as process from 'process'
 
 import {Commander} from './commander'
 import {LaTeXCommander} from './components/commander'
 import {Logger} from './components/logger'
 import {BuildInfo} from './components/buildinfo'
-import {Manager} from './components/manager'
+import {Manager, BuildEvents} from './components/manager'
 import {Builder} from './components/builder'
 import {Viewer} from './components/viewer'
 import {Server} from './components/server'
 import {Locator} from './components/locator'
 import {Linter} from './components/linter'
 import {Cleaner} from './components/cleaner'
+import {Counter} from './components/counter'
 import {TeXMagician} from './components/texmagician'
 import {EnvPair} from './components/envpair'
+import {Section} from './components/section'
 import {Parser as LogParser} from './components/parser/log'
 import {UtensilsParser as PEGParser} from './components/parser/syntax'
 
 import {Completer} from './providers/completion'
+import {BibtexCompleter} from './providers/bibtexcompletion'
 import {CodeActions} from './providers/codeactions'
 import {HoverProvider} from './providers/hover'
 import {GraphicsPreview} from './providers/preview/graphicspreview'
@@ -75,10 +79,12 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('latex-workshop.actions', () => extension.commander.actions())
     vscode.commands.registerCommand('latex-workshop.citation', () => extension.commander.citation())
     vscode.commands.registerCommand('latex-workshop.addtexroot', () => extension.commander.addTexRoot())
+    vscode.commands.registerCommand('latex-workshop.wordcount', () => extension.commander.wordcount())
     vscode.commands.registerCommand('latex-workshop.log', (compiler) => extension.commander.log(compiler))
     vscode.commands.registerCommand('latex-workshop.code-action', (d, r, c, m) => extension.codeActions.runCodeAction(d, r, c, m))
     vscode.commands.registerCommand('latex-workshop.goto-section', (filePath, lineNumber) => extension.commander.gotoSection(filePath, lineNumber))
     vscode.commands.registerCommand('latex-workshop.navigate-envpair', () => extension.commander.navigateToEnvPair())
+    vscode.commands.registerCommand('latex-workshop.select-envcontent', () => extension.commander.selectEnvContent())
     vscode.commands.registerCommand('latex-workshop.select-envname', () => extension.commander.selectEnvName())
     vscode.commands.registerCommand('latex-workshop.multicursor-envname', () => extension.commander.multiCursorEnvName())
     vscode.commands.registerCommand('latex-workshop.toggle-equation-envname', () => extension.commander.toggleEquationEnv())
@@ -114,6 +120,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     vscode.commands.registerCommand('latex-workshop.promote-sectioning', () => extension.commander.shiftSectioningLevel('promote'))
     vscode.commands.registerCommand('latex-workshop.demote-sectioning', () => extension.commander.shiftSectioningLevel('demote'))
+    vscode.commands.registerCommand('latex-workshop.select-section', () => extension.commander.selectSection())
 
     vscode.commands.registerCommand('latex-workshop.showCompilationPanel', () => extension.buildInfo.showPanel())
     vscode.commands.registerCommand('latex-workshop.showSnippetPanel', () => extension.snippetPanel.showPanel())
@@ -128,6 +135,15 @@ export function activate(context: vscode.ExtensionContext) {
 
             extension.structureProvider.refresh()
             extension.structureProvider.update()
+            const configuration = vscode.workspace.getConfiguration('latex-workshop')
+            if (configuration.get('latex.autoBuild.run') as string === BuildEvents.onSave) {
+                if (extension.builder.disableBuildAfterSave) {
+                    extension.logger.addLogMessage('Auto Build Run is temporarily disabled during a second.')
+                    return
+                }
+                extension.logger.addLogMessage(`Auto build started on saving file: ${e.fileName}`)
+                extension.commander.build(true)
+            }
         }
     }))
 
@@ -199,9 +215,9 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }))
 
-    const latexSelector = selectDocumentsWithId(['latex', 'rsweave'])
-    const latexBibtexSelector = selectDocumentsWithId(['latex', 'rsweave', 'bibtex'])
-    const latexDoctexSelector = selectDocumentsWithId(['latex', 'rsweave', 'doctex'])
+    const latexSelector = selectDocumentsWithId(['latex', 'latex-expl3', 'jlweave', 'rsweave'])
+    const latexBibtexSelector = selectDocumentsWithId(['latex', 'latex-expl3',' jlweave', 'rsweave', 'bibtex'])
+    const latexDoctexSelector = selectDocumentsWithId(['latex', 'latex-expl3', 'jlweave', 'rsweave', 'doctex'])
     const formatter = new LatexFormatterProvider(extension)
     vscode.languages.registerDocumentFormattingEditProvider(latexBibtexSelector, formatter)
     vscode.languages.registerDocumentRangeFormattingEditProvider(latexBibtexSelector, formatter)
@@ -214,12 +230,15 @@ export function activate(context: vscode.ExtensionContext) {
         extension.structureViewer.showCursorIteme(e)
     }))
 
+    context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('latex-workshop-pdf', extension.viewer.pdfViewerPanelSerializer))
+
     context.subscriptions.push(vscode.languages.registerHoverProvider(latexSelector, new HoverProvider(extension)))
     context.subscriptions.push(vscode.languages.registerDefinitionProvider(latexSelector, new DefinitionProvider(extension)))
     context.subscriptions.push(vscode.languages.registerDocumentSymbolProvider(latexSelector, new DocSymbolProvider(extension)))
     context.subscriptions.push(vscode.languages.registerWorkspaceSymbolProvider(new ProjectSymbolProvider(extension)))
     context.subscriptions.push(vscode.languages.registerCompletionItemProvider({ scheme: 'file', language: 'tex'}, extension.completer, '\\', '{'))
     context.subscriptions.push(vscode.languages.registerCompletionItemProvider(latexDoctexSelector, extension.completer, '\\', '{', ',', '(', '['))
+    context.subscriptions.push(vscode.languages.registerCompletionItemProvider({ scheme: 'file', language: 'bibtex'}, new BibtexCompleter(extension), '@'))
     context.subscriptions.push(vscode.languages.registerCodeActionsProvider(latexSelector, extension.codeActions))
     context.subscriptions.push(vscode.languages.registerFoldingRangeProvider(latexSelector, new FoldingProvider(extension)))
 
@@ -230,6 +249,7 @@ export function activate(context: vscode.ExtensionContext) {
     checkDeprecatedFeatures(extension)
     newVersionMessage(context.extensionPath, extension)
 
+    // If VS Code started with PDF files, we must explicitly execute `commander.pdf` for the PDF files.
     vscode.window.visibleTextEditors.forEach(editor => {
         const e = editor.document
         if (e.languageId === 'pdf') {
@@ -241,8 +261,12 @@ export function activate(context: vscode.ExtensionContext) {
 
     return {
         getGraphicsPath: () => extension.completer.input.graphicsPath,
+        builder: {
+            isBuildFinished: process.env['LATEXWORKSHOP_CI'] ? ( () => extension.builder.isBuildFinished() ) : undefined
+        },
         viewer: {
             clients: extension.viewer.clients,
+            getViewerStatus: process.env['LATEXWORKSHOP_CI'] ? ( (pdfFilePath: string) => extension.viewer.getViewerState(pdfFilePath) ) : undefined,
             refreshExistingViewer: (sourceFile?: string, viewer?: string) => extension.viewer.refreshExistingViewer(sourceFile, viewer),
             openTab: (sourceFile: string, respectOutDir: boolean = true, column: string = 'right') => extension.viewer.openTab(sourceFile, respectOutDir, column)
         },
@@ -267,40 +291,50 @@ export function activate(context: vscode.ExtensionContext) {
                     })
                     return allPkgs
                 }
-            }
+            },
+            provideCompletionItems: process.env['LATEXWORKSHOP_CI'] ? ((
+                document: vscode.TextDocument,
+                position: vscode.Position,
+                token: vscode.CancellationToken,
+                cxt: vscode.CompletionContext
+            ) => extension.completer.provideCompletionItems(document, position, token, cxt)) : undefined
         }
     }
 }
 
 export class Extension {
-    packageInfo: any
-    extensionRoot: string
-    logger: Logger
-    buildInfo: BuildInfo
-    commander: Commander
-    manager: Manager
-    builder: Builder
-    viewer: Viewer
-    server: Server
-    locator: Locator
-    logParser: LogParser
-    pegParser: PEGParser
-    completer: Completer
-    linter: Linter
-    cleaner: Cleaner
-    codeActions: CodeActions
-    texMagician: TeXMagician
-    envPair: EnvPair
-    structureProvider: SectionNodeProvider
-    structureViewer: StructureTreeView
-    snippetPanel: SnippetPanel
-    graphicsPreview: GraphicsPreview
-    mathPreview: MathPreview
-    bibtexFormater: BibtexFormater
+    packageInfo: { version?: string } = {}
+    readonly extensionRoot: string
+    readonly logger: Logger
+    readonly buildInfo: BuildInfo
+    readonly commander: Commander
+    readonly manager: Manager
+    readonly builder: Builder
+    readonly viewer: Viewer
+    readonly server: Server
+    readonly locator: Locator
+    readonly logParser: LogParser
+    readonly pegParser: PEGParser
+    readonly completer: Completer
+    readonly linter: Linter
+    readonly cleaner: Cleaner
+    readonly counter: Counter
+    readonly codeActions: CodeActions
+    readonly texMagician: TeXMagician
+    readonly envPair: EnvPair
+    readonly section: Section
+    readonly structureProvider: SectionNodeProvider
+    readonly structureViewer: StructureTreeView
+    readonly snippetPanel: SnippetPanel
+    readonly graphicsPreview: GraphicsPreview
+    readonly mathPreview: MathPreview
+    readonly bibtexFormater: BibtexFormater
 
     constructor() {
         this.extensionRoot = path.resolve(`${__dirname}/../../`)
-        this.logger = new Logger(this)
+        // We must create an instance of Logger first to enable
+        // adding log messages during initialization.
+        this.logger = new Logger()
         this.buildInfo = new BuildInfo(this)
         this.commander = new Commander(this)
         this.manager = new Manager(this)
@@ -312,13 +346,15 @@ export class Extension {
         this.completer = new Completer(this)
         this.linter = new Linter(this)
         this.cleaner = new Cleaner(this)
+        this.counter = new Counter(this)
         this.codeActions = new CodeActions(this)
         this.texMagician = new TeXMagician(this)
         this.envPair = new EnvPair(this)
+        this.section = new Section(this)
         this.structureProvider = new SectionNodeProvider(this)
         this.structureViewer = new StructureTreeView(this)
         this.snippetPanel = new SnippetPanel(this)
-        this.pegParser = new PEGParser(this)
+        this.pegParser = new PEGParser()
         this.graphicsPreview = new GraphicsPreview(this)
         this.mathPreview = new MathPreview(this)
         this.bibtexFormater = new BibtexFormater(this)
