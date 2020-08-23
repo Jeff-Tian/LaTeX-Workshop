@@ -212,7 +212,7 @@ export class Manager {
         }
 
         const layout = path.resolve(this.workspaceRootDir, 'layout.tex')
-        const layoutWrapped = path.resolve(path.dirname(file), 'layout-wrapped.tex')
+        const layoutWrapped = path.resolve(this.workspaceRootDir, 'layout-wrapped.tex')
         fs.writeFileSync(layoutWrapped, fs.readFileSync(layout, 'utf-8').replace('{children}', fs.readFileSync(file, 'utf-8')))
 
         this.extension.logger.addLogMessage(`Found root file by layout comment: ${layoutWrapped}`)
