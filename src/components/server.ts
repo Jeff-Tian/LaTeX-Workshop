@@ -1,5 +1,5 @@
 import * as http from 'http'
-import * as ws from 'ws'
+import ws from 'ws'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as vscode from 'vscode'
@@ -9,9 +9,9 @@ import {AddressInfo} from 'net'
 import {decodePathWithPrefix, pdfFilePrefix} from '../utils/utils'
 
 export class Server {
-    extension: Extension
-    httpServer: http.Server
-    wsServer: ws.Server
+    private readonly extension: Extension
+    private httpServer: http.Server
+    private wsServer: ws.Server
     address?: string
     port?: number
 
@@ -37,13 +37,12 @@ export class Server {
         this.wsServer = new ws.Server({server: this.httpServer})
         this.wsServer.on('connection', (websocket) => {
             websocket.on('message', (msg: string) => this.extension.viewer.handler(websocket, msg))
-            websocket.on('close', () => this.extension.viewer.handler(websocket, '{"type": "close"}'))
             websocket.on('error', () => this.extension.logger.addLogMessage('Error on WebSocket connection.'))
         })
         this.extension.logger.addLogMessage('Creating LaTeX Workshop http and websocket server.')
     }
 
-    handler(request: http.IncomingMessage, response: http.ServerResponse) {
+    private handler(request: http.IncomingMessage, response: http.ServerResponse) {
         if (!request.url) {
             return
         }
@@ -51,6 +50,10 @@ export class Server {
         if (request.url.includes(pdfFilePrefix) && !request.url.includes('viewer.html')) {
             const s = request.url.replace('/', '')
             const fileName = decodePathWithPrefix(s)
+            if (this.extension.viewer.getClients(fileName) === undefined) {
+                this.extension.logger.addLogMessage(`Invalid PDF request: ${fileName}`)
+                return
+            }
             try {
                 const pdfSize = fs.statSync(fileName).size
                 response.writeHead(200, {'Content-Type': 'application/pdf', 'Content-Length': pdfSize})
@@ -76,7 +79,8 @@ export class Server {
             } else {
                 root = path.resolve(`${this.extension.extensionRoot}/viewer`)
             }
-            const fileName = path.resolve(root, '.' + request.url.split('?')[0])
+            const reqFileName = path.posix.resolve('/', request.url.split('?')[0])
+            const fileName = path.resolve(root, '.' + reqFileName)
             let contentType = 'text/html'
             switch (path.extname(fileName)) {
                 case '.js':

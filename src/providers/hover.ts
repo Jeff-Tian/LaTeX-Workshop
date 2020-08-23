@@ -3,7 +3,7 @@ import {Extension} from '../main'
 import {tokenizer, onAPackage} from './tokenizer'
 
 export class HoverProvider implements vscode.HoverProvider {
-    extension: Extension
+    private readonly extension: Extension
 
     constructor(extension: Extension) {
         this.extension = extension
@@ -55,7 +55,13 @@ export class HoverProvider implements vscode.HoverProvider {
         const cites = this.extension.completer.citation.getEntryDict()
         if (hovCitation && token in cites) {
             const range = document.getWordRangeAtPosition(position, /\{.*?\}/)
-            return new vscode.Hover('```\n' + cites[token].detail + '\n```\n', range)
+            const cite = cites[token]
+            if (cite) {
+                const md = cite.documentation || cite.detail
+                if (md) {
+                    return new vscode.Hover(md, range)
+                }
+            }
         }
         return undefined
     }

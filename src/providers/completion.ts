@@ -2,7 +2,9 @@ import * as vscode from 'vscode'
 import * as fs from 'fs-extra'
 
 import {Extension} from '../main'
+import {IProvider} from './completer/interface'
 import {Citation} from './completer/citation'
+import {DocumentClass} from './completer/documentclass'
 import {Command} from './completer/command'
 import {Environment} from './completer/environment'
 import {Reference} from './completer/reference'
@@ -10,19 +12,21 @@ import {Package} from './completer/package'
 import {Input} from './completer/input'
 
 export class Completer implements vscode.CompletionItemProvider {
-    extension: Extension
-    citation: Citation
-    command: Command
-    environment: Environment
-    reference: Reference
-    package: Package
-    input: Input
+    private readonly extension: Extension
+    readonly citation: Citation
+    readonly command: Command
+    readonly documentClass: DocumentClass
+    readonly environment: Environment
+    readonly reference: Reference
+    readonly package: Package
+    readonly input: Input
 
     constructor(extension: Extension) {
         this.extension = extension
         this.citation = new Citation(extension)
-        this.command = new Command(extension)
-        this.environment = new Environment(extension)
+        this.environment = new Environment(extension) // Must be created before command
+        this.command = new Command(extension, this.environment)
+        this.documentClass = new DocumentClass(extension)
         this.reference = new Reference(extension)
         this.package = new Package(extension)
         this.input = new Input(extension)
@@ -33,11 +37,10 @@ export class Completer implements vscode.CompletionItemProvider {
         }
     }
 
-    loadDefaultItems() {
+    private loadDefaultItems() {
         const defaultEnvs = fs.readFileSync(`${this.extension.extensionRoot}/data/environments.json`, {encoding: 'utf8'})
         const defaultCommands = fs.readFileSync(`${this.extension.extensionRoot}/data/commands.json`, {encoding: 'utf8'})
-        const defaultLaTeXMathSymbols = fs.readFileSync(`${this.extension.extensionRoot}/data/packages/latex-mathsymbols_cmd.json`,
-                                                        {encoding: 'utf8'})
+        const defaultLaTeXMathSymbols = fs.readFileSync(`${this.extension.extensionRoot}/data/packages/latex-mathsymbols_cmd.json`, {encoding: 'utf8'})
         const env = JSON.parse(defaultEnvs)
         const cmds = JSON.parse(defaultCommands)
         const maths = JSON.parse(defaultLaTeXMathSymbols)
@@ -50,8 +53,9 @@ export class Completer implements vscode.CompletionItemProvider {
             }
         }
         Object.assign(maths, cmds)
-        this.command.initialize(maths, env)
+        // Make sure to initialize environment first
         this.environment.initialize(env)
+        this.command.initialize(maths)
     }
 
     provideCompletionItems(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext): Promise<vscode.CompletionItem[]> {
@@ -77,7 +81,9 @@ export class Completer implements vscode.CompletionItemProvider {
             }
 
             const line = document.lineAt(position.line).text.substr(0, position.character)
-            for (const type of ['citation', 'reference', 'environment', 'package', 'input', 'subimport', 'import', 'command']) {
+            // Note that the order of the following array affects the result.
+            // 'command' must be at the last because it matches any commands.
+            for (const type of ['citation', 'reference', 'environment', 'package', 'documentclass', 'input', 'subimport', 'import', 'includeonly', 'command']) {
                 const suggestions = this.completion(type, line, {document, position, token, context})
                 if (suggestions.length > 0) {
                     if (type === 'citation') {
@@ -121,13 +127,12 @@ export class Completer implements vscode.CompletionItemProvider {
         return ret
     }
 
-    completion(type: string, line: string, args: {document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext}): vscode.CompletionItem[] {
+    private completion(type: string, line: string, args: {document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext}): vscode.CompletionItem[] {
         let reg: RegExp | undefined
-        let provider: Citation | Reference | Environment | Command | Package | Input | undefined
-        let payload: any
+        let provider: IProvider | undefined
         switch (type) {
             case 'citation':
-                reg = /(?:\\[a-zA-Z]*[Cc]ite[a-zA-Z]*\*?(?:(?:\[[^[\]]*\])*(?:{[^{}]*})?)*{([^}]*)$)|(?:\\bibentry{([^}]*)$)/
+                reg = /(?:\\[a-zA-Z]*[Cc]ite[a-zA-Z]*\*?(?:\([^[)]*\)){0,2}(?:(?:\[[^[\]]*\])*(?:{[^{}]*})?)*{([^}]*)$)|(?:\\bibentry{([^}]*)$)/
                 provider = this.citation
                 break
             case 'reference':
@@ -139,15 +144,23 @@ export class Completer implements vscode.CompletionItemProvider {
                 provider = this.environment
                 break
             case 'command':
-                reg = /\\([a-zA-Z]*)$/
+                reg = args.document.languageId === 'latex-expl3' ? /\\([a-zA-Z_]*(?::[a-zA-Z]*)?)$/ : /\\([a-zA-Z]*)$/
                 provider = this.command
                 break
             case 'package':
                 reg = /(?:\\usepackage(?:\[[^[\]]*\])*){([^}]*)$/
                 provider = this.package
                 break
+            case 'documentclass':
+                reg = /(?:\\documentclass(?:\[[^[\]]*\])*){([^}]*)$/
+                provider = this.documentClass
+                break
             case 'input':
                 reg = /\\(input|include|subfile|includegraphics|lstinputlisting|verbatiminput)\*?(?:\[[^[\]]*\])*{([^}]*)$/
+                provider = this.input
+                break
+            case 'includeonly':
+                reg = /\\(includeonly|excludeonly){(?:{[^}]*},)*(?:[^,]*,)*{?([^},]*)$/
                 provider = this.input
                 break
             case 'import':
@@ -166,16 +179,7 @@ export class Completer implements vscode.CompletionItemProvider {
         const result = line.match(reg)
         let suggestions: vscode.CompletionItem[] = []
         if (result) {
-            if (type === 'input' || type === 'import' || type === 'subimport') {
-                const editor = vscode.window.activeTextEditor
-                // Make sure to pass the args always in the same order [type, filename, command, typedFolder, importFromDir]
-                if (editor) {
-                    payload = [type, editor.document.fileName, result[1], ...result.slice(2).reverse()]
-                }
-            } else if (type === 'reference' || type === 'citation') {
-                payload = args
-            }
-            suggestions = provider.provide(payload)
+            suggestions = provider.provideFrom(type, result, args)
         }
         return suggestions
     }

@@ -1,5 +1,107 @@
 # Change Log
 
+## [8.11.1] - 2020-07-01
+
+### Fixed
+- Restoring PDF viewers does not work well with VS Code 1.47.
+- (#2172) `"latex-workshop.latex.recipe.default": "lastUsed"` doesn't work.
+- (#2176) No need to put the closing `}` on its own line in `.bib`.
+- (#2177) Use `kpsewhich` to resolve bibliography files.
+- (#2182) Also search for `.bib` files in `rootDir`.
+
+## [8.11.0] - 2020-06-24
+
+### Added
+- (#2149) Add support for `weave.jl`.
+- (#2154) Add section numbers in outline.
+  - This feature can be deactivated by setting `latex-workshop.view.outline.numbers.enabled: false`.
+
+### Improved
+- (#2109) Improve PDF viewer refresh speed.
+- (#2157) Improve the invert mode of the PDF viewer with additional filters.
+
+### Fixed
+- Activate `onEnterKey` even when suggestion is visible.
+  - Always activate `onEnterKey` when `acceptSuggestionOnEnter`.
+  - (#2167) Do not activate `onEnterKey` when `suggestWidgetVisible`.
+- (#2107) Use `fs.realpathSync` to compare file paths for SyncTeX.
+- (#2146) Use `rootFile` to expand placeholders when formatting.
+
+## [8.10.0] - 2020-06-06
+
+### Added
+- Enhance LaTeX3 support.
+- Activate extension for `latex-expl3` language id.
+- (#2018) Support restoring PDF viewers.
+- (#2088) Add completion support for `includeonly`/`excludeonly`.
+- (#2099) Set default recipe by name.
+- (#2115) Add intellisense for optional `bibtex` fields.
+- (#2118) Texcount comes back.
+- (#2136) Filename completion with already typed path.
+
+### Fixed
+- Fix double `}}` in env completion.
+- (#1523) Match `\autocite`s syntax highlight.
+- (#2049) Add `luahbtex` rule for build info.
+- (#2052) Add standard math envs to the default list.
+- (#2052) Set `intellisense.package.enabled` to true to populate intellisense based on the used packages.
+- (#2054) Declare more cite commands for syntax highlighting.
+- (#2055) Stop rebroadcasting keyboard events on Linux.
+- (#2056) Remove duplicate `\env` commands.
+- (#2120) Show labels in structure/outline.
+- (#2131) Fix spaces in suggestions.
+
+## [8.9.0] - 2020-04-24
+
+### Added
+- Update `PDF.js` to `v2.3.200`.
+- Enhanced `rnw `support.
+- Turn `..` into tabstops in snippets.
+- The new placeholders `%DOC_W32%`, `%DOC_EXT_W32%`, `%DIR_W32%`, `%OUTDIR_W32%` are normalized so that they use `\\` as the path separator on Windows.
+  - Placeholders without the `_W32` suffix always use `/` as the path separator. On Unix platforms, placeholders with and without the `_W32` suffix have the same value.
+- (#1534,#2020) Match `\left`...`\right` brackets.
+- (#1951) Load `data/packages/class-*.json` files to provide completion items specific to `documentclass`es.
+- (#1989) Add syntax highlighting for TypeScript in `minted`.
+- (#2029) Refactor environments snippets.
+- (#2033) Add a completion provider for `bibtex` files.
+- (#2047) Add more default commands in intellisense.
+
+### Changed
+- In `%DOC%` and `%DOCFILE%`, we now remove any extension, not only `.tex`.
+  - Two new placeholders `%DOC_EXT%` and `%DOCFILE_EXT%` are respectively the root file full path and the root file name with the extension kept.
+- Use `cross-spawn` to build and view.
+
+### Fixed
+- Fix `updatePkg` when `latexParser` fails.
+- (#2002) Make sure to kill all child processes.
+- (#2003) Reveal a `WebviewPanel` when executing SyncTeX.
+- (#2010) Force `/` in `%OUTDIR%` even on Windows.
+- (#2011) Check the length of the args of `\label` command.
+- (#2012) Remove `cleveref` intellisense entries.
+- (#2016) Disable Ctrl+P Shortcut in `pdf.js` viewer.
+- (#2017) Use a dedicated option for pdf watch delay.
+- (#2025) Render citation completion and preview as markdown.
+- (#2030) Order latexmk rules numerically in compilation live info.
+
+## [8.8.0] - 2020-03-22
+
+### Added
+- (#1949) Make the PDF watcher delay configurable via `latex-workshop.latex.watch.delay`.
+- (#1950) Enable keyboard shortcuts of VS Code on the PDF viewer.
+- (#1955) Add embedded language support for minted ruby.
+- (#1963) Add `\addplot` grammar support.
+- (#1985) Improved intellisense for reference via `latex-workshop.intellisense.citation.format`.
+
+### Removed
+- (#1986) Remove `formatOnSave:false` in latex configuration.
+
+### Fixed
+- (#1947) Normalize `outdir` path.
+- (#1953) Fix clean command with relative `outDir`.
+- (#1962) Use page numbers to cache SVG files.
+- (#1965) Ctrl click to open `documentclass` file.
+- (#1972) Use `rootDir` as PWD when parsing `.fls` file.
+
 ## [8.7.2] - 2020-02-12
 
 ### Fixed

@@ -4,7 +4,7 @@ import {Extension} from '../main'
 import {Section} from './structure'
 
 export class DocSymbolProvider implements vscode.DocumentSymbolProvider {
-    extension: Extension
+    private readonly extension: Extension
 
     private sections: string[] = []
 
@@ -18,11 +18,11 @@ export class DocSymbolProvider implements vscode.DocumentSymbolProvider {
 
     public provideDocumentSymbols(document: vscode.TextDocument): Promise<vscode.DocumentSymbol[]> {
         return new Promise((resolve, _reject) => {
-            resolve(this.sectionToSymbols(this.extension.structureProvider.buildModel(document.fileName, undefined, undefined, undefined, false)))
+            resolve(this.sectionToSymbols(this.extension.structureProvider.buildModel(document.fileName, undefined, undefined, undefined, undefined, false)))
         })
     }
 
-    sectionToSymbols(sections: Section[]): vscode.DocumentSymbol[] {
+    private sectionToSymbols(sections: Section[]): vscode.DocumentSymbol[] {
         const symbols: vscode.DocumentSymbol[] = []
 
         sections.forEach(section => {

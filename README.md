@@ -9,9 +9,15 @@
 [![Average time to resolve an issue](https://isitmaintained.com/badge/resolution/James-Yu/LaTeX-Workshop.svg)](https://github.com/James-Yu/LaTeX-Workshop/issues)
 [![Percentage of issues still open](https://isitmaintained.com/badge/open/James-Yu/LaTeX-Workshop.svg)](https://github.com/James-Yu/LaTeX-Workshop/issues)
 
-LaTeX Workshop is an extension for [Visual Studio Code](https://code.visualstudio.com/), aiming to provide core features for LaTeX typesetting with Visual Studio Code. It also has a sibling extension, [LaTeX Utilities](https://marketplace.visualstudio.com/items?itemName=tecosaur.latex-utilities), providing extra features.
+[![TeX Live on Windows](https://github.com/James-Yu/LaTeX-Workshop/workflows/TeX%20Live%20on%20Windows/badge.svg)](https://github.com/James-Yu/LaTeX-Workshop/actions?query=workflow%3A%22TeX+Live+on+Windows%22)
+[![TeX Live on macOS](https://github.com/James-Yu/LaTeX-Workshop/workflows/TeX%20Live%20on%20macOS/badge.svg)](https://github.com/James-Yu/LaTeX-Workshop/actions?query=workflow%3A%22TeX+Live+on+macOS%22)
+[![TeX Live on Linux](https://github.com/James-Yu/LaTeX-Workshop/workflows/TeX%20Live%20on%20Linux/badge.svg)](https://github.com/James-Yu/LaTeX-Workshop/actions?query=workflow%3A%22TeX+Live+on+Linux%22)
+[![Docker on Linux](https://github.com/James-Yu/LaTeX-Workshop/workflows/Docker%20on%20Linux/badge.svg)](https://github.com/James-Yu/LaTeX-Workshop/actions?query=workflow%3A%22Docker+on+Linux%22)
 
-This project won't be successful without contributions from the community, especially the current and past key contributors:
+LaTeX Workshop is an extension for [Visual Studio Code](https://code.visualstudio.com/), aiming to provide core features for LaTeX typesetting with Visual Studio Code.
+
+This project won't be successful without contributions from the community, especially from the current and past key contributors:
+
 - Jerome Lelong [`@jlelong`](https://github.com/jlelong)
 - Takashi Tamura [`@tamuratak`](https://github.com/tamuratak)
 - Tecosaur [`@tecosaur`](https://github.com/tecosaur)
@@ -19,22 +25,27 @@ This project won't be successful without contributions from the community, espec
 
 Thank you so much!
 
-**Note that starting from version `7.0.0`, LaTeX-Workshop requires at least VSCode `1.34.0`.**
+**Note that the latest version of LaTeX-Workshop requires at least VSCode `1.42.0`.**
 
 ## Manual
 
 The manual of the extension is maintained as a [wiki](https://github.com/James-Yu/LaTeX-Workshop/wiki)
 
-- [Home](https://github.com/James-Yu/LaTeX-Workshop/wiki/https://github.com/James-Yu/LaTeX-Workshop/wiki/Home)
+### Table of Contents
+
+- [Home](https://github.com/James-Yu/LaTeX-Workshop/wiki/Home)
 - [Installation and basic settings](https://github.com/James-Yu/LaTeX-Workshop/wiki/Install)
   - [Requirements](https://github.com/James-Yu/LaTeX-Workshop/wiki/Install#requirements)
   - [Installation](https://github.com/James-Yu/LaTeX-Workshop/wiki/Install#installation)
   - [Setting PATH environment variable](https://github.com/James-Yu/LaTeX-Workshop/wiki/Install#setting-path-environment-variable)
+  - [Settings](https://github.com/James-Yu/LaTeX-Workshop/wiki/Install#settings)
   - [Usage](https://github.com/James-Yu/LaTeX-Workshop/wiki/Install#usage)
   - [Using Docker](https://github.com/James-Yu/LaTeX-Workshop/wiki/Install#using-docker)
   - [Using WSL](https://github.com/James-Yu/LaTeX-Workshop/wiki/Install#using-wsl)
 - [Compiling](https://github.com/James-Yu/LaTeX-Workshop/wiki/Compile)
+  - [Multi file projects](https://github.com/James-Yu/LaTeX-Workshop/wiki/Compile#Multi-File-Projects)
   - [Building the document](https://github.com/James-Yu/LaTeX-Workshop/wiki/Compile#building-the-document)
+  - [Building a `.rnw` file](https://github.com/James-Yu/LaTeX-Workshop/wiki/Compile#building-a-rnw-file)
   - [Terminating the current compilation](https://github.com/James-Yu/LaTeX-Workshop/wiki/Compile#terminating-the-current-compilation)
   - [Auto build](https://github.com/James-Yu/LaTeX-Workshop/wiki/Compile#auto-build-latex)
   - [Cleaning generated files](https://github.com/James-Yu/LaTeX-Workshop/wiki/Compile#cleaning-generated-files)
@@ -42,17 +53,22 @@ The manual of the extension is maintained as a [wiki](https://github.com/James-Y
   - [Magic comments](https://github.com/James-Yu/LaTeX-Workshop/wiki/Compile#magic-comments)
   - [Catching errors](https://github.com/James-Yu/LaTeX-Workshop/wiki/Compile#catching-errors-and-warnings)
 - [Linting](https://github.com/James-Yu/LaTeX-Workshop/wiki/Linters)
-- [Viewing & synctex](https://github.com/James-Yu/LaTeX-Workshop/wiki/View)
+- [Viewing & SyncTeX](https://github.com/James-Yu/LaTeX-Workshop/wiki/View)
+  - [Internal PDF viewer](https://github.com/James-Yu/LaTeX-Workshop/wiki/View#internal-pdf-viewer)
+    - [Invert mode](https://github.com/James-Yu/LaTeX-Workshop/wiki/View#invert-mode)
+  - [SyncTeX](https://github.com/James-Yu/LaTeX-Workshop/wiki/View#synctex)
+  - [External PDF viewer](https://github.com/James-Yu/LaTeX-Workshop/wiki/View#external-pdf-viewer)
+    - [Using SyncTeX with an external viewer](https://github.com/James-Yu/LaTeX-Workshop/wiki/View#using-synctex-with-an-external-viewer)
 - [Formatting](https://github.com/James-Yu/LaTeX-Workshop/wiki/Format)
   - [LaTeX files](https://github.com/James-Yu/LaTeX-Workshop/wiki/Format#LaTeX-files)
   - [Bibtex files](https://github.com/James-Yu/LaTeX-Workshop/wiki/Format#Bibtex-files)
-- [Multi file projects](https://github.com/James-Yu/LaTeX-Workshop/wiki/Multi-File-Projects)
 - [Intellisense](https://github.com/James-Yu/LaTeX-Workshop/wiki/Intellisense)
   - [Citations](https://github.com/James-Yu/LaTeX-Workshop/wiki/Intellisense#Citations)
   - [References](https://github.com/James-Yu/LaTeX-Workshop/wiki/Intellisense#References)
   - [Commands](https://github.com/James-Yu/LaTeX-Workshop/wiki/Intellisense#Commands)
   - [Environments](https://github.com/James-Yu/LaTeX-Workshop/wiki/Intellisense#Environments)
   - [Files](https://github.com/James-Yu/LaTeX-Workshop/wiki/Intellisense#files)
+  - [Bibtex Files](https://github.com/James-Yu/LaTeX-Workshop/wiki/Intellisense#bibtex-files)
 - [Snippets and shortcuts](https://github.com/James-Yu/LaTeX-Workshop/wiki/Snippets)
   - [Environments](https://github.com/James-Yu/LaTeX-Workshop/wiki/Snippets#Environments)
   - [Sectioning](https://github.com/James-Yu/LaTeX-Workshop/wiki/Snippets#Sectioning)
@@ -69,12 +85,15 @@ The manual of the extension is maintained as a [wiki](https://github.com/James-Y
   - [Previewing references](https://github.com/James-Yu/LaTeX-Workshop/wiki/Hover#previewing-references)
   - [Documentation of a command](https://github.com/James-Yu/LaTeX-Workshop/wiki/Hover#documentation-of-a-command)
 - [Playing with environments](https://github.com/James-Yu/LaTeX-Workshop/wiki/Environments)
-  - [Inserting an environment](https://github.com/James-Yu/LaTeX-Workshop/wiki/Environments#inserting-an-environments)
+  - [Inserting an environment](https://github.com/James-Yu/LaTeX-Workshop/wiki/Environments#inserting-an-environment)
   - [Itemize like environments](https://github.com/James-Yu/LaTeX-Workshop/wiki/Environments#Itemize-like-environments)
-  - [Navigating](https://github.com/James-Yu/LaTeX-Workshop/wiki/Environments#Navigating)
+  - [Navigating and selecting](https://github.com/James-Yu/LaTeX-Workshop/wiki/Environments#navigating-and-selecting)
   - [Changing between `\[...\]` and `\begin{}...\end{}`](https://github.com/James-Yu/LaTeX-Workshop/wiki/Environments#changing-between--and-beginend)
   - [Closing the current environment](https://github.com/James-Yu/LaTeX-Workshop/wiki/Environments#Closing-the-current-environment)
   - [Surrounding selection with an environment](https://github.com/James-Yu/LaTeX-Workshop/wiki/Environments#Surrounding-selection-with-an-environment)
+- [Extra features](https://github.com/James-Yu/LaTeX-Workshop/wiki/ExtraFeatures)
+  - [Structure of the document](https://github.com/James-Yu/LaTeX-Workshop/wiki/ExtraFeatures#structure-of-the-document)
+  - [Counting words](https://github.com/James-Yu/LaTeX-Workshop/wiki/ExtraFeatures#counting-words)
 - [VS Code Remote Development](https://github.com/James-Yu/LaTeX-Workshop/wiki/Remote)
 - [FAQ and common issues](https://github.com/James-Yu/LaTeX-Workshop/wiki/FAQ)
 

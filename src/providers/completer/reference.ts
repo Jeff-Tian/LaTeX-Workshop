@@ -4,6 +4,7 @@ import * as path from 'path'
 import {latexParser} from 'latex-utensils'
 
 import {Extension} from '../../main'
+import {IProvider} from './interface'
 
 export interface Suggestion extends vscode.CompletionItem {
     file: string, // The file that defines the ref
@@ -11,17 +12,21 @@ export interface Suggestion extends vscode.CompletionItem {
     prevIndex?: {refNumber: string, pageNumber: string} // Stores the ref number
 }
 
-export class Reference {
-    extension: Extension
+export class Reference implements IProvider {
+    private readonly extension: Extension
     // Here we use an object instead of an array for de-duplication
-    private suggestions: {[id: string]: Suggestion} = {}
+    private readonly suggestions: {[id: string]: Suggestion} = {}
     private prevIndexObj: { [k: string]: {refNumber: string, pageNumber: string} } = {}
 
     constructor(extension: Extension) {
         this.extension = extension
     }
 
-    provide(args: {document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext}): vscode.CompletionItem[] {
+    provideFrom(_type: string, _result: RegExpMatchArray, args: {document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext}) {
+        return this.provide(args)
+    }
+
+    private provide(args: {document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext}): vscode.CompletionItem[] {
         // Compile the suggestion object to array
         this.updateAll(args)
         let keys = Object.keys(this.suggestions)
@@ -39,6 +44,15 @@ export class Reference {
         return items
     }
 
+    /**
+     * Updates the Manager cache for references defined in `file` with `nodes`.
+     * If `nodes` is `undefined`, `content` is parsed with regular expressions,
+     * and the result is used to update the cache.
+     * @param file The path of a LaTeX file.
+     * @param nodes AST of a LaTeX file.
+     * @param lines The lines of the content. They are used to generate the documentation of completion items.
+     * @param content The content of a LaTeX file.
+     */
     update(file: string, nodes?: latexParser.Node[], lines?: string[], content?: string) {
         if (nodes !== undefined && lines !== undefined) {
             this.extension.manager.cachedContent[file].element.reference = this.getRefFromNodeArray(nodes, lines)
@@ -68,7 +82,7 @@ export class Reference {
                 }
                 this.suggestions[ref.label] = {...ref,
                     file: cachedFile,
-                    position: ref.range.start,
+                    position: ref.range instanceof vscode.Range ? ref.range.start : ref.range.inserting.start,
                     range: args ? args.document.getWordRangeAtPosition(args.position, /[-a-zA-Z0-9_:.]+/) : undefined,
                     prevIndex: this.prevIndexObj[ref.label]
                 }
@@ -103,7 +117,7 @@ export class Reference {
         const useLabelKeyVal = configuration.get('intellisense.label.keyval')
         const refs: vscode.CompletionItem[] = []
         let label = ''
-        if (latexParser.isCommand(node) && node.name === 'label') {
+        if (latexParser.isCommand(node) && node.name === 'label' && node.args.length > 0) {
             // \label{some-text}
             label = (node.args.filter(latexParser.isGroup)[0].content[0] as latexParser.TextString).content
         } else if (latexParser.isTextString(node) && node.content === 'label=' && useLabelKeyVal && nextNode !== undefined) {
@@ -179,6 +193,10 @@ export class Reference {
             const result = newLabelReg.exec(auxContent)
             if (result === null) {
                 break
+            }
+            if (result[1].endsWith('@cref') && result[1].replace('@cref', '') in this.prevIndexObj) {
+                // Drop extra \newlabel entries added by cleveref
+                continue
             }
             this.prevIndexObj[result[1]] = {refNumber: result[2], pageNumber: result[3]}
             if (result[1] in this.suggestions) {

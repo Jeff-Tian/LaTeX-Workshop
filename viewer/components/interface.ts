@@ -1,7 +1,7 @@
-import {PageTrimmer} from './pagetrimmer.js'
-import {ClientRequest} from './protocol.js'
-import {SyncTex} from './synctex.js'
-import {ViewerHistory} from './viewerhistory.js'
+import type {PageTrimmer} from './pagetrimmer.js'
+import type {ClientRequest} from './protocol.js'
+import type {SyncTex} from './synctex.js'
+import type {ViewerHistory} from './viewerhistory.js'
 
 export interface IDisposable {
     dispose(): any
@@ -11,7 +11,6 @@ export interface ILatexWorkshopPdfViewer {
     readonly documentTitle: string,
     readonly embedded: boolean,
     readonly encodedPdfFilePath: string,
-    readonly hideToolbarInterval: number | undefined,
     readonly pageTrimmer: PageTrimmer,
     readonly pdfFilePath: string,
     readonly server: string,
@@ -22,31 +21,37 @@ export interface ILatexWorkshopPdfViewer {
      * `cb` is called immediately before the viewer will starts.
      * Can be used to override the settings of PDFViewerApplication.
      */
-    onWillStartPdfViewer(cb: (e: Event) => any): IDisposable,
+    onWillStartPdfViewer(cb: () => any): IDisposable,
 
     /**
      * `cb` is called after the viewer started.
      */
-    onDidStartPdfViewer(cb: (e: Event) => any): IDisposable,
+    onDidStartPdfViewer(cb: () => any): IDisposable,
 
     /**
      * `cb` is called after a PDF document is loaded and reloaded.
      */
-    onDidLoadPdfFile(cb: (e: Event) => any, option?: {once: boolean}): IDisposable,
+    onDidLoadPdfFile(cb: () => any, option?: {once: boolean}): IDisposable,
 
     /**
      * `cb` is called after the a PDF document is rendered.
      */
-    onDidRenderPdfFile(cb: (e: Event) => any, option?: {once: boolean}): IDisposable,
+    onDidRenderPdfFile(cb: () => any, option?: {once: boolean}): IDisposable,
 
     send(message: ClientRequest): void
 }
 
 export interface IPDFViewerApplication {
+    eventBus: {
+        on: (eventName: string, listener: () => void) => void,
+        off: (eventName: string, listener: () => void) => void,
+        dispatch: (eventName: string) => void
+    },
     findBar: {
         opened: boolean,
         open(): void
     },
+    initializedPromise: Promise<void>,
     isViewerEmbedded: boolean,
     pdfViewer: {
         _currentScale: number,

@@ -3,24 +3,31 @@ import * as fs from 'fs'
 import {bibtexParser} from 'latex-utensils'
 
 import {Extension} from '../../main'
+import {IProvider} from './interface'
 
 export interface Suggestion extends vscode.CompletionItem {
     key: string,
-    detail: string,
     fields: {[key: string]: string},
     file: string,
     position: vscode.Position
 }
 
-export class Citation {
-    extension: Extension
-    private bibEntries: {[file: string]: Suggestion[]} = {}
+export class Citation implements IProvider {
+    private readonly extension: Extension
+    /**
+     * Bib entries in each bib `file`.
+     */
+    private readonly bibEntries: {[file: string]: Suggestion[]} = {}
 
     constructor(extension: Extension) {
         this.extension = extension
     }
 
-    provide(args?: {document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext}): vscode.CompletionItem[] {
+    provideFrom(_type: string, _result: RegExpMatchArray, args: {document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext}) {
+        return this.provide(args)
+    }
+
+    private provide(args?: {document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext}): vscode.CompletionItem[] {
         // Compile the suggestion array to vscode completion array
         const label = vscode.workspace.getConfiguration('latex-workshop').get('intellisense.citation.label') as string
         return this.updateAll(this.getIncludedBibs(this.extension.manager.rootFile)).map(item => {
@@ -42,7 +49,6 @@ export class Citation {
             }
             item.filterText = `${item.key} ${item.fields.author} ${item.fields.title} ${item.fields.journal}`
             item.insertText = item.key
-            item.documentation = item.detail
             if (args) {
                 item.range = args.document.getWordRangeAtPosition(args.position, /[-a-zA-Z0-9_:.]+/)
             }
@@ -88,6 +94,12 @@ export class Citation {
         return entries
     }
 
+    /**
+     * Returns the array of the paths of `.bib` files referenced from `file`.
+     *
+     * @param file The path of a LaTeX file. If `undefined`, the keys of `bibEntries` are used.
+     * @param visitedTeX Internal use only.
+     */
     private getIncludedBibs(file?: string, visitedTeX: string[] = []) {
         if (file === undefined) {
             // Only happens when rootFile is undefined
@@ -103,11 +115,16 @@ export class Citation {
                 // Already included
                 continue
             }
-            bibs = bibs.concat(this.getIncludedBibs(child.file, visitedTeX))
+            bibs = Array.from(new Set(bibs.concat(this.getIncludedBibs(child.file, visitedTeX))))
         }
         return bibs
     }
 
+    /**
+     * Returns aggregated bib entries from `.bib` files and bibitems defined on LaTeX files included in the root file.
+     *
+     * @param bibFiles The array of the paths of `.bib` files. If `undefined`, the keys of `bibEntries` are used.
+     */
     private updateAll(bibFiles?: string[]): Suggestion[] {
         let suggestions: Suggestion[] = []
         // Update the dirty content in active text editor, get bibitems
@@ -145,17 +162,23 @@ export class Citation {
         return suggestions
     }
 
+    /**
+     * Parses `.bib` file. The results are stored in this instance.
+     *
+     * @param file The path of `.bib` file.
+     */
     async parseBibFile(file: string) {
         this.extension.logger.addLogMessage(`Parsing .bib entries from ${file}`)
         const configuration = vscode.workspace.getConfiguration('latex-workshop')
         if (fs.statSync(file).size >= (configuration.get('intellisense.citation.maxfilesizeMB') as number) * 1024 * 1024) {
-            this.extension.logger.addLogMessage(`${file} is too large, ignoring it.`)
+            this.extension.logger.addLogMessage(`Bib file is too large, ignoring it: ${file}`)
             if (file in this.bibEntries) {
                 delete this.bibEntries[file]
             }
             return
         }
         this.bibEntries[file] = []
+        const fields: string[] = (configuration.get('intellisense.citation.format') as string[]).map(f => { return f.toLowerCase() })
         const bibtex = fs.readFileSync(file).toString()
         const ast = await this.extension.pegParser.parseBibtex(bibtex).catch((e) => {
             if (bibtexParser.isSyntaxError(e)) {
@@ -176,15 +199,19 @@ export class Citation {
                     file,
                     position: new vscode.Position(entry.location.start.line - 1, entry.location.start.column - 1),
                     kind: vscode.CompletionItemKind.Reference,
-                    detail: '',
                     fields: {}
                 }
+                let doc: string = ''
                 entry.content.forEach(field => {
                     const value = Array.isArray(field.value.content) ?
                         field.value.content.join(' ') : this.deParenthesis(field.value.content)
                     item.fields[field.name] = value
-                    item.detail += `${field.name.charAt(0).toUpperCase() + field.name.slice(1)}: ${value}\n`
+                    if (fields.includes(field.name.toLowerCase())) {
+                        doc += `${field.name.charAt(0).toUpperCase() + field.name.slice(1)}: ${value}\n`
+                    }
                 })
+                // We need two spaces to ensure md newline
+                item.documentation = new vscode.MarkdownString( '\n' + doc.replace(/\n/g, '  \n') + '\n\n' )
                 this.bibEntries[file].push(item)
             })
         this.extension.logger.addLogMessage(`Parsed ${this.bibEntries[file].length} bib entries from ${file}.`)
@@ -195,7 +222,14 @@ export class Citation {
         delete this.bibEntries[file]
     }
 
-    /* This function parses the bibitem entries defined in tex files */
+    /**
+     * Updates the Manager cache for bibitems defined in `file`.
+     * `content` is parsed with regular expressions,
+     * and the result is used to update the cache.
+     *
+     * @param file The path of a LaTeX file.
+     * @param content The content of a LaTeX file.
+     */
     update(file: string, content: string) {
         this.extension.manager.cachedContent[file].element.bibitem =
             this.parseContent(file, content)
@@ -227,6 +261,8 @@ export class Citation {
     }
 
     private deParenthesis(str: string) {
-        return str.replace(/{+([^\\{}]+)}+/g, '$1')
+        // Remove wrapping { }
+        // Extract the content of \url{}
+        return str.replace(/\\url{([^\\{}]+)}/g, '$1').replace(/{+([^\\{}]+)}+/g, '$1')
     }
 }

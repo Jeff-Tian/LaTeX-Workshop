@@ -1,25 +1,28 @@
-import {Extension} from '../../main'
 import * as path from 'path'
 import * as workerpool from 'workerpool'
 import {Proxy} from 'workerpool'
 import {IMathJaxWorker} from './mathjaxpool_worker'
 
-type TypesetArg = {
+export type TypesetArg = {
     width?: number,
     equationNumbers?: string,
     math: string,
     format: string,
     svgNode: boolean,
-    state?: any
+    state?: {
+        AMS: {
+            labels: { [k: string]: string },
+            IDs: { [k: string]: string },
+            startNumber: number
+        }
+    }
 }
 
 export class MathJaxPool {
-    extension: Extension
-    pool: workerpool.WorkerPool
-    proxy: workerpool.Promise<Proxy<IMathJaxWorker>>
+    private readonly pool: workerpool.WorkerPool
+    private readonly proxy: workerpool.Promise<Proxy<IMathJaxWorker>>
 
-    constructor(extension: Extension) {
-        this.extension = extension
+    constructor() {
         this.pool = workerpool.pool(
             path.join(__dirname, 'mathjaxpool_worker.js'),
             { minWorkers: 1, maxWorkers: 1, workerType: 'process' }
@@ -28,12 +31,7 @@ export class MathJaxPool {
     }
 
     async typeset(arg: TypesetArg, opts: { scale: number, color: string }): Promise<string> {
-        try {
-            return (await this.proxy).typeset(arg, opts).timeout(3000)
-        } catch(e) {
-            this.extension.logger.addLogMessage(`Error when MathJax is rendering ${arg.math}`)
-            throw e
-        }
+        return (await this.proxy).typeset(arg, opts).timeout(3000)
     }
 
 }

@@ -7,7 +7,14 @@ export type ServerResponse = {
     scrollMode: number,
     spreadMode: number,
     hand: boolean,
-    invert: number,
+    invertMode: {
+        enabled: boolean,
+        brightness: number,
+        grayscale: number,
+        hueRotate: number,
+        invert: number,
+        sepia: number
+    },
     bgColor: string,
     keybindings: {
         synctex: 'ctrl-click' | 'double-click'
@@ -26,8 +33,6 @@ export type ClientRequest = {
     path: string,
     viewer: 'browser' | 'tab'
 } | {
-    type: 'close'
-} | {
     type: 'request_params',
     path: string
 } | {
@@ -45,4 +50,29 @@ export type ClientRequest = {
     page: number,
     textBeforeSelection: string,
     textAfterSelection: string
+}
+
+export type PanelManagerResponse = {
+    type: 'restore_state',
+    state: PdfViewerState
+}
+
+export type PanelRequest = {
+    type: 'initialized'
+} | {
+    type: 'keyboard_event',
+    event: any
+} | {
+    type: 'state',
+    state: PdfViewerState
+}
+
+export type PdfViewerState = {
+    path?: string,
+    scale?: string,
+    scrollTop?: number,
+    scrollLeft?: number,
+    trim?: number,
+    scrollMode?: number,
+    spreadMode?: number
 }

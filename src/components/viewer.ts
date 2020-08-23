@@ -1,14 +1,17 @@
 import * as vscode from 'vscode'
 import * as fs from 'fs'
-import * as ws from 'ws'
+import * as os from 'os'
+import ws from 'ws'
 import * as path from 'path'
-import * as cp from 'child_process'
+import * as cs from 'cross-spawn'
+import {escapeHtml} from '../utils/utils'
 
 import {Extension} from '../main'
 import {SyncTeXRecordForward} from './locator'
 import {encodePathWithPrefix} from '../utils/utils'
 
-import {ClientRequest, ServerResponse} from '../../viewer/components/protocol'
+import {ClientRequest, ServerResponse, PanelRequest, PdfViewerState} from '../../viewer/components/protocol'
+import {getCurrentThemeLightness} from '../utils/theme'
 
 class Client {
     readonly viewer: 'browser' | 'tab'
@@ -24,14 +27,104 @@ class Client {
     }
 }
 
-export class Viewer {
-    extension: Extension
-    clients: {[key: string]: Client[]} = {}
+class PdfViewerPanel {
+    readonly webviewPanel: vscode.WebviewPanel
+    readonly pdfFilePath: string
+    private _state?: PdfViewerState
+
+    constructor(pdfFilePath: string, panel: vscode.WebviewPanel) {
+        this.pdfFilePath = pdfFilePath
+        this.webviewPanel = panel
+        panel.webview.onDidReceiveMessage((msg: PanelRequest) => {
+            switch(msg.type) {
+                case 'state': {
+                    this._state = msg.state
+                    break
+                }
+                default: {
+                    break
+                }
+            }
+        })
+    }
+
+    get state() {
+        return this._state
+    }
+
+}
+
+class PdfViewerPanelSerializer implements vscode.WebviewPanelSerializer {
+    private readonly extension: Extension
 
     constructor(extension: Extension) {
         this.extension = extension
     }
 
+    deserializeWebviewPanel(panel: vscode.WebviewPanel, state0: {state: PdfViewerState}) {
+        this.extension.logger.addLogMessage(`Restoring the PDF viewer at the column ${panel.viewColumn} from the state: ${JSON.stringify(state0)}`)
+        const state = state0.state
+        const pdfFilePath = state.path
+        if (!pdfFilePath) {
+            this.extension.logger.addLogMessage('Error of restoring PDF viewer: the path of PDF file is undefined.')
+            panel.webview.html = '<!DOCTYPE html> <html lang="en"><meta charset="utf-8"/><br>The path of PDF file is undefined.</html>'
+            return Promise.resolve()
+        }
+        if (!fs.existsSync(pdfFilePath)) {
+            const s = escapeHtml(pdfFilePath)
+            this.extension.logger.addLogMessage(`Error of restoring PDF viewer: file not found ${pdfFilePath}.`)
+            panel.webview.html = `<!DOCTYPE html> <html lang="en"><meta charset="utf-8"/><br>File not found: ${s}</html>`
+            return Promise.resolve()
+        }
+        panel.webview.html = this.extension.viewer.getPDFViewerContent(pdfFilePath)
+        const pdfPanel = new PdfViewerPanel(pdfFilePath, panel)
+        this.extension.viewer.pushPdfViewerPanel(pdfPanel)
+        return Promise.resolve()
+    }
+
+}
+
+export class Viewer {
+    private readonly extension: Extension
+    private readonly webviewPanels: Map<string, Set<PdfViewerPanel>> = new Map()
+    readonly clients: {[key: string]: Set<Client>} = {}
+    readonly pdfViewerPanelSerializer: PdfViewerPanelSerializer
+
+    constructor(extension: Extension) {
+        this.extension = extension
+        this.pdfViewerPanelSerializer = new PdfViewerPanelSerializer(extension)
+    }
+
+    private createClients(pdfFilePath: string) {
+        const key = pdfFilePath.toLocaleUpperCase()
+        this.clients[key] = this.clients[key] || new Set()
+        if (!this.webviewPanels.has(key)) {
+            this.webviewPanels.set(key, new Set())
+        }
+    }
+
+    /**
+     * Returns the set of client instances of a PDF file.
+     * Returns `undefined` if the viewer have not recieved any request for the PDF file.
+     *
+     * @param pdfFilePath The path of a PDF file.
+     */
+    getClients(pdfFilePath: string): Set<Client> | undefined {
+        return this.clients[pdfFilePath.toLocaleUpperCase()]
+    }
+
+    private getPanelSet(pdfFilePath: string) {
+        return this.webviewPanels.get(pdfFilePath.toLocaleUpperCase())
+    }
+
+    /**
+     * Refreshes PDF viewers of `sourceFile`. If `sourceFile` is `undefined`,
+     * refreshes all the PDF viewers. If `sourceFile` and `viewer` are not `undefined`,
+     * only the `viewer` is refreshed.
+     *
+     * @param sourceFile The path of a LaTeX file.
+     * @param viewer The PDF viewer to be refreshed.
+     */
     refreshExistingViewer(sourceFile?: string, viewer?: string): boolean {
         if (!sourceFile) {
             Object.keys(this.clients).forEach(key => {
@@ -42,7 +135,7 @@ export class Viewer {
             return true
         }
         const pdfFile = this.extension.manager.tex2pdf(sourceFile, true)
-        const clients = this.clients[pdfFile.toLocaleUpperCase()]
+        const clients = this.getClients(pdfFile)
         if (clients !== undefined) {
             let refreshed = false
             // Check all viewer clients with the same path
@@ -63,7 +156,7 @@ export class Viewer {
         return false
     }
 
-    checkViewer(sourceFile: string, respectOutDir: boolean = true): string | undefined {
+    private checkViewer(sourceFile: string, respectOutDir: boolean = true): string | undefined {
         const pdfFile = this.extension.manager.tex2pdf(sourceFile, respectOutDir)
         if (!fs.existsSync(pdfFile)) {
             this.extension.logger.addLogMessage(`Cannot find PDF file ${pdfFile}`)
@@ -79,13 +172,18 @@ export class Viewer {
         return url
     }
 
+    /**
+     * Opens the PDF file of `sourceFile` in the browser.
+     *
+     * @param sourceFile The path of a LaTeX file.
+     */
     openBrowser(sourceFile: string) {
         const url = this.checkViewer(sourceFile, true)
         if (!url) {
             return
         }
         const pdfFile = this.extension.manager.tex2pdf(sourceFile)
-        this.clients[pdfFile.toLocaleUpperCase()] = this.clients[pdfFile.toLocaleUpperCase()] || []
+        this.createClients(pdfFile)
 
         try {
             vscode.env.openExternal(vscode.Uri.parse(url))
@@ -99,48 +197,109 @@ export class Viewer {
         }
     }
 
-    openTab(sourceFile: string, respectOutDir: boolean = true, tabEditorGroup: string) {
+    /**
+     * Opens the PDF file of `sourceFile` in the internal PDF viewer.
+     *
+     * @param sourceFile The path of a LaTeX file.
+     * @param respectOutDir
+     * @param tabEditorGroup
+     */
+    async openTab(sourceFile: string, respectOutDir: boolean = true, tabEditorGroup: string) {
         const url = this.checkViewer(sourceFile, respectOutDir)
         if (!url) {
             return
         }
-        if (this.extension.server.port === undefined) {
-            this.extension.logger.addLogMessage('Server port is undefined')
+        const pdfFile = this.extension.manager.tex2pdf(sourceFile, respectOutDir)
+        const editor = vscode.window.activeTextEditor
+        const panel = this.createPdfViewerPanel(pdfFile, vscode.ViewColumn.Active)
+        if (!panel) {
             return
         }
-        const pdfFile = this.extension.manager.tex2pdf(sourceFile, respectOutDir)
-        this.clients[pdfFile.toLocaleUpperCase()] = this.clients[pdfFile.toLocaleUpperCase()] || []
-
-        const editor = vscode.window.activeTextEditor
-        let viewColumn: vscode.ViewColumn
-        if (tabEditorGroup === 'current') {
-            viewColumn = vscode.ViewColumn.Active
-        } else {
-            // If an editor already exists on the left, use it
-            if (tabEditorGroup === 'left' && editor?.viewColumn === vscode.ViewColumn.Two) {
-                viewColumn = vscode.ViewColumn.One
-            } else {
-                viewColumn = vscode.ViewColumn.Beside
+        if (editor) {
+            // We need to turn the viewer into the active editor to move it to an other editor group
+            panel.webviewPanel.reveal(undefined, false)
+            let focusAction: string | undefined
+            switch (tabEditorGroup) {
+                case 'left':
+                    await vscode.commands.executeCommand('workbench.action.moveEditorToLeftGroup')
+                    focusAction = 'workbench.action.focusRightGroup'
+                    break
+                case 'right':
+                    await vscode.commands.executeCommand('workbench.action.moveEditorToRightGroup')
+                    focusAction = 'workbench.action.focusLeftGroup'
+                    break
+                case 'above':
+                    await vscode.commands.executeCommand('workbench.action.moveEditorToAboveGroup')
+                    focusAction = 'workbench.action.focusBelowGroup'
+                    break
+                case 'below':
+                    await vscode.commands.executeCommand('workbench.action.moveEditorToBelowGroup')
+                    focusAction = 'workbench.action.focusAboveGroup'
+                    break
+                default:
+                    break
             }
-        }
-        const panel = vscode.window.createWebviewPanel('latex-workshop-pdf', path.basename(pdfFile), viewColumn, {
-            enableScripts: true,
-            retainContextWhenHidden: true,
-            portMapping : [{webviewPort: this.extension.server.port, extensionHostPort: this.extension.server.port}]
-        })
-        panel.webview.html = this.getPDFViewerContent(pdfFile)
-        if (editor && viewColumn !== vscode.ViewColumn.Active) {
-            setTimeout(() => { vscode.window.showTextDocument(editor.document, editor.viewColumn).then(() => {
-                if (tabEditorGroup === 'left' && viewColumn !== vscode.ViewColumn.One) {
-                vscode.commands.executeCommand('workbench.action.moveActiveEditorGroupRight')
-            }}) }, 500)
+            // Then, we set the focus back to the .tex file
+            setTimeout(async () => {
+                if (focusAction ) {
+                    await vscode.commands.executeCommand(focusAction)
+                }
+                await vscode.window.showTextDocument(editor.document, vscode.ViewColumn.Active)
+            }, 500)
         }
         this.extension.logger.addLogMessage(`Open PDF tab for ${pdfFile}`)
     }
 
+    private createPdfViewerPanel(pdfFilePath: string, viewColumn: vscode.ViewColumn): PdfViewerPanel | undefined {
+        if (this.extension.server.port === undefined) {
+            this.extension.logger.addLogMessage('Server port is undefined')
+            return
+        }
+
+        const panel = vscode.window.createWebviewPanel('latex-workshop-pdf', path.basename(pdfFilePath), viewColumn, {
+            enableScripts: true,
+            retainContextWhenHidden: true,
+            portMapping : [{webviewPort: this.extension.server.port, extensionHostPort: this.extension.server.port}]
+        })
+        panel.webview.html = this.getPDFViewerContent(pdfFilePath)
+        const pdfPanel = new PdfViewerPanel(pdfFilePath, panel)
+        this.pushPdfViewerPanel(pdfPanel)
+        return pdfPanel
+    }
+
+    pushPdfViewerPanel(pdfPanel: PdfViewerPanel) {
+        this.createClients(pdfPanel.pdfFilePath)
+        const panelSet = this.getPanelSet(pdfPanel.pdfFilePath)
+        if (!panelSet) {
+            return
+        }
+        panelSet.add(pdfPanel)
+        pdfPanel.webviewPanel.onDidDispose(() => {
+            panelSet.delete(pdfPanel)
+        })
+    }
+
+    private getKeyboardEventConfig(): boolean {
+        const configuration = vscode.workspace.getConfiguration('latex-workshop')
+        const setting: 'auto' | 'force' | 'never' = configuration.get('viewer.pdf.internal.keyboardEvent', 'auto')
+        if (setting === 'auto') {
+            return os.platform() !== 'linux'
+        } else if (setting === 'force') {
+            return true
+        } else {
+            return false
+        }
+    }
+
+    /**
+     * Returns the HTML content of the internal PDF viewer.
+     *
+     * @param pdfFile The path of a PDF file to be opened.
+     */
     getPDFViewerContent(pdfFile: string): string {
         // viewer/viewer.js automatically requests the file to server.ts, and server.ts decodes the encoded path of PDF file.
         const url = `http://localhost:${this.extension.server.port}/viewer.html?incode=1&file=${encodePathWithPrefix(pdfFile)}`
+        const rebroadcast: boolean = this.getKeyboardEventConfig()
         return `
             <!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="default-src http://localhost:* http://127.0.0.1:*; script-src 'unsafe-inline'; style-src 'unsafe-inline';"></head>
             <body><iframe id="preview-panel" class="preview-panel" src="${url}" style="position:absolute; border: none; left: 0; top: 0; width: 100%; height: 100%;">
@@ -151,26 +310,53 @@ export class Viewer {
             //
             // Note: this works on first load, or when navigating between groups, but not when
             //       navigating between tabs of the same group for some reason!
-
-            let iframe = document.getElementById('preview-panel');
+            const iframe = document.getElementById('preview-panel');
             window.onfocus = iframe.onload = function() {
                 setTimeout(function() { // doesn't work immediately
                     iframe.contentWindow.focus();
                 }, 100);
             }
+
+            const vsStore = acquireVsCodeApi();
             // To enable keyboard shortcuts of VS Code when the iframe is focused,
             // we have to dispatch keyboard events in the parent window.
             // See https://github.com/microsoft/vscode/issues/65452#issuecomment-586036474
             window.addEventListener('message', (e) => {
-                if (e.origin === 'http://localhost:${this.extension.server.port}') {
-                    window.dispatchEvent(new KeyboardEvent('keydown', e.data));
+                if (e.origin !== 'http://localhost:${this.extension.server.port}') {
+                    return;
                 }
+                switch (e.data.type) {
+                    case 'initialized': {
+                        const state = vsStore.getState();
+                        state.type = 'restore_state';
+                        iframe.contentWindow.postMessage(state, '*');
+                        break;
+                    }
+                    case 'keyboard_event': {
+                        if (${rebroadcast}) {
+                            window.dispatchEvent(new KeyboardEvent('keydown', e.data.event));
+                        }
+                        break;
+                    }
+                    case 'state': {
+                        vsStore.setState(e.data);
+                        break;
+                    }
+                    default:
+                        break;
+                }
+                vsStore.postMessage(e.data)
             });
             </script>
             </body></html>
         `
     }
 
+    /**
+     * Opens the PDF file of `sourceFile` in the external PDF viewer.
+     *
+     * @param sourceFile The path of a LaTeX file.
+     */
     openExternal(sourceFile: string) {
         const pdfFile = this.extension.manager.tex2pdf(sourceFile)
         const configuration = vscode.workspace.getConfiguration('latex-workshop')
@@ -198,61 +384,70 @@ export class Viewer {
             args = args.map(arg => arg.replace('%PDF%', pdfFile))
         }
         this.extension.manager.setEnvVar()
-        cp.spawn(command, args, {cwd: path.dirname(sourceFile), detached: true})
+        cs.spawn(command, args, {cwd: path.dirname(sourceFile), detached: true})
         this.extension.logger.addLogMessage(`Open external viewer for ${pdfFile}`)
     }
 
+    /**
+     * Handles the request from the internal PDF viewer.
+     *
+     * @param websocket The WebSocket connecting with the viewer.
+     * @param msg A message from the viewer in JSON fromat.
+     */
     handler(websocket: ws, msg: string) {
         const data: ClientRequest = JSON.parse(msg)
-        let clients: Client[] | undefined
         if (data.type !== 'ping') {
             this.extension.logger.addLogMessage(`Handle data type: ${data.type}`)
         }
         switch (data.type) {
             case 'open': {
-                clients = this.clients[data.path.toLocaleUpperCase()]
+                const clients = this.getClients(data.path)
                 if (clients === undefined) {
                     return
                 }
-                clients.push( new Client(data.viewer, websocket) )
-                break
-            }
-            case 'close': {
-                for (const key in this.clients) {
-                    clients = this.clients[key]
-                    let index = -1
-                    for (const client of clients) {
-                        if (client.websocket === websocket) {
-                            index = clients.indexOf(client)
-                            break
-                        }
-                    }
-                    if (index > -1) {
-                        clients.splice(index, 1)
-                    }
-                }
+                const client = new Client(data.viewer, websocket)
+                clients.add( client )
+                websocket.on('close', () => {
+                    clients.delete(client)
+                })
                 break
             }
             case 'request_params': {
-                clients = this.clients[data.path.toLocaleUpperCase()]
+                const clients = this.getClients(data.path)
+                if (!clients) {
+                    break
+                }
                 for (const client of clients) {
                     if (client.websocket !== websocket) {
                         continue
                     }
                     const configuration = vscode.workspace.getConfiguration('latex-workshop')
-                    client.send({
+                    const invertType = configuration.get('view.pdf.invertMode.enabled') as string
+                    const invertEnabled = (invertType === 'auto' && (getCurrentThemeLightness() === 'dark')) ||
+                        invertType === 'always' ||
+                        (invertType === 'compat' && ((configuration.get('view.pdf.invert') as number) > 0))
+                    const pack: ServerResponse = {
                         type: 'params',
                         scale: configuration.get('view.pdf.zoom') as string,
                         trim: configuration.get('view.pdf.trim') as number,
                         scrollMode: configuration.get('view.pdf.scrollMode') as number,
                         spreadMode: configuration.get('view.pdf.spreadMode') as number,
                         hand: configuration.get('view.pdf.hand') as boolean,
-                        invert: configuration.get('view.pdf.invert') as number,
+                        invertMode: {
+                            enabled: invertEnabled,
+                            brightness: configuration.get('view.pdf.invertMode.brightness') as number,
+                            grayscale: configuration.get('view.pdf.invertMode.grayscale') as number,
+                            hueRotate: configuration.get('view.pdf.invertMode.hueRotate') as number,
+                            invert: configuration.get('view.pdf.invert') as number,
+                            sepia: configuration.get('view.pdf.invertMode.sepia') as number,
+                        },
                         bgColor: configuration.get('view.pdf.backgroundColor') as string,
                         keybindings: {
                             synctex: configuration.get('view.pdf.internal.synctex.keybinding') as 'ctrl-click' | 'double-click'
                         }
-                    })
+                    }
+                    this.extension.logger.addLogMessage(`Sending the settings of the PDF viewer for initialization: ${JSON.stringify(pack)}`)
+                    client.send(pack)
                 }
                 break
             }
@@ -269,7 +464,7 @@ export class Viewer {
                 break
             }
             case 'external_link': {
-                vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(data.url))
+                vscode.env.openExternal(vscode.Uri.parse(data.url))
                 break
             }
             case 'ping': {
@@ -283,15 +478,68 @@ export class Viewer {
         }
     }
 
+    /**
+     * Reveals the position of `record` on the internal PDF viewers.
+     *
+     * @param pdfFile The path of a PDF file.
+     * @param record The position to be revealed.
+     */
     syncTeX(pdfFile: string, record: SyncTeXRecordForward) {
-        const clients = this.clients[pdfFile.toLocaleUpperCase()]
+        const clients = this.getClients(pdfFile)
         if (clients === undefined) {
             this.extension.logger.addLogMessage(`PDF is not viewed: ${pdfFile}`)
             return
         }
+        const needDelay = this.revealWebviewPanel(pdfFile)
         for (const client of clients) {
-            client.send({type: 'synctex', data: record})
+            setTimeout(() => {
+                client.send({type: 'synctex', data: record})
+            }, needDelay ? 200 : 0)
             this.extension.logger.addLogMessage(`Try to synctex ${pdfFile}`)
         }
     }
+
+    /**
+     * Reveals the internal PDF viewer of `pdfFilePath`.
+     * The first one is revealed.
+     *
+     * @param pdfFilePath The path of a PDF file.
+     * @returns Returns `true` if `WebviewPanel.reveal` called.
+     */
+    revealWebviewPanel(pdfFilePath: string) {
+        const panelSet = this.getPanelSet(pdfFilePath)
+        if (!panelSet) {
+            return
+        }
+        for (const panel of panelSet.values()) {
+            if (panel.webviewPanel.visible) {
+                return
+            }
+        }
+        const activeViewColumn = vscode.window.activeTextEditor?.viewColumn
+        for (const panel of panelSet.values()) {
+            if (panel.webviewPanel.viewColumn !== activeViewColumn) {
+                if (!panel.webviewPanel.visible) {
+                    panel.webviewPanel.reveal(undefined, true)
+                    return true
+                }
+                return
+            }
+        }
+        return
+    }
+
+    /**
+     * Returns the state of the internal PDF viewer of `pdfFilePath`.
+     *
+     * @param pdfFilePath The path of a PDF file.
+     */
+    getViewerState(pdfFilePath: string): (PdfViewerState | undefined)[] {
+        const panelSet = this.getPanelSet(pdfFilePath)
+        if (!panelSet) {
+            return []
+        }
+        return Array.from(panelSet).map( e => e.state )
+    }
+
 }

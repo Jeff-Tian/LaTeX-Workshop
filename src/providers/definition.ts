@@ -7,7 +7,7 @@ import {tokenizer} from './tokenizer'
 import * as utils from '../utils/utils'
 
 export class DefinitionProvider implements vscode.DefinitionProvider {
-    extension: Extension
+    private readonly extension: Extension
 
     constructor(extension: Extension) {
         this.extension = extension
@@ -18,9 +18,14 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
         const escapedToken = utils.escapeRegExp(token)
         const regexInput = new RegExp(`\\\\(?:include|input|subfile)\\{${escapedToken}\\}`)
         const regexImport = new RegExp(`\\\\(?:sub)?(?:import|includefrom|inputfrom)\\*?\\{([^\\}]*)\\}\\{${escapedToken}\\}`)
+        const regexDocumentclass = new RegExp(`\\\\(?:documentclass)(?:\\[[^[]]*\\])?\\{${escapedToken}\\}`)
 
         if (! vscode.window.activeTextEditor) {
             return undefined
+        }
+
+        if (line.match(regexDocumentclass)) {
+            return utils.resolveFile([path.dirname(vscode.window.activeTextEditor.document.fileName)], token, '.cls')
         }
 
         let dirs: string[] = []

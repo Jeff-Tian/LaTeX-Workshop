@@ -4,6 +4,7 @@ import { readFileSync } from 'fs'
 import * as fs from 'fs'
 
 import { Extension } from '../main'
+import {replaceWebviewPlaceholders} from '../utils/webview'
 
 type IMathSymbol = {
     name: string,
@@ -16,9 +17,9 @@ type IMathSymbol = {
 }
 
 export class SnippetPanel {
-    extension: Extension
-    panel: vscode.WebviewPanel | undefined
-    lastActiveTextEditor: vscode.TextEditor | undefined
+    private readonly extension: Extension
+    private panel: vscode.WebviewPanel | undefined
+    private lastActiveTextEditor: vscode.TextEditor | undefined
 
     constructor(extension: Extension) {
         this.extension = extension
@@ -64,14 +65,7 @@ export class SnippetPanel {
 
         const webviewSourcePath = path.join(resourcesFolder, 'snippetpanel.html')
         let webviewHtml = readFileSync(webviewSourcePath, { encoding: 'utf8' })
-        webviewHtml = webviewHtml.replace(
-            /vscode-resource:\.\//g,
-            'vscode-resource:' +
-                vscode.Uri.file(resourcesFolder).with({
-                    scheme: 'vscode-resource'
-                }).path +
-                '/'
-        )
+        webviewHtml = replaceWebviewPlaceholders(webviewHtml, this.extension, this.panel.webview)
         this.panel.webview.html = webviewHtml
 
         this.initialisePanel()
@@ -81,14 +75,8 @@ export class SnippetPanel {
         fs.watchFile(webviewSourcePath, () => {
             {
                 if (this.panel) {
-                    this.panel.webview.html = readFileSync(webviewSourcePath, { encoding: 'utf8' }).replace(
-                        /vscode-resource:\.\//g,
-                        'vscode-resource:' +
-                            vscode.Uri.file(resourcesFolder).with({
-                                scheme: 'vscode-resource'
-                            }).path +
-                            '/'
-                    )
+                    const htmlStr = readFileSync(webviewSourcePath, { encoding: 'utf8' })
+                    this.panel.webview.html = replaceWebviewPlaceholders(htmlStr, this.extension, this.panel.webview)
                     this.initialisePanel()
                 }
             }
