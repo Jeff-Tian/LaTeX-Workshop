@@ -1954,7 +1954,7 @@
     "strip-json-comments": "^3.0.1",
     "tmp": "^0.2.1",
     "workerpool": "^6.0.0",
-    "ws": "^5.1.1"
+    "ws": "^8.17.1"
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.1",
