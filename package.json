@@ -1945,7 +1945,7 @@
     "fs-extra": "^9.0.1",
     "glob": "^7.1.1",
     "iconv-lite": "^0.6.0",
-    "jimp": "^0.10.3",
+    "jimp": "^1.0.2",
     "latex-utensils": "^2.0.1",
     "mathjax": "^2.7.5",
     "mathjax-node": "2.1.1",
